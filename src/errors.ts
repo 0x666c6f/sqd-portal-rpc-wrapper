@@ -49,6 +49,15 @@ export function invalidRequest(message = 'invalid request'): RpcError {
   });
 }
 
+export function parseError(message = 'parse error'): RpcError {
+  return new RpcError({
+    message,
+    code: -32700,
+    httpStatus: 400,
+    category: 'invalid_request'
+  });
+}
+
 export function methodNotSupported(message = 'method not supported'): RpcError {
   return new RpcError({
     message,

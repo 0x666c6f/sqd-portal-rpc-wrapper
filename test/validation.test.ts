@@ -47,6 +47,12 @@ describe('validation', () => {
     expect(result.logFilter.topic0).toHaveLength(1);
   });
 
+  it('rejects fromBlock greater than toBlock', async () => {
+    await expect(
+      parseLogFilter(portal as any, 'https://portal', { fromBlock: '0x2', toBlock: '0x1' }, config)
+    ).rejects.toThrow('invalid block range');
+  });
+
   it('parses hex block number', async () => {
     const result = await parseBlockNumber(portal as any, 'https://portal', '0x2a', config);
     expect(result.number).toBe(42);

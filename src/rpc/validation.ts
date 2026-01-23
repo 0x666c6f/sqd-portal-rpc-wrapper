@@ -129,10 +129,10 @@ export async function parseLogFilter(
 
   const useFinalized = !filter.toBlock && fromBlock.useFinalized ? false : toBlock.useFinalized;
 
-  const blockRange = toBlock.number - fromBlock.number + 1;
-  if (blockRange < 0) {
+  if (toBlock.number < fromBlock.number) {
     throw invalidParams('invalid block range');
   }
+  const blockRange = toBlock.number - fromBlock.number + 1;
   if (blockRange > config.maxLogBlockRange) {
     throw rangeTooLargeError(config.maxLogBlockRange);
   }

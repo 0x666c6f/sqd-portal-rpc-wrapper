@@ -107,4 +107,23 @@ describe('server', () => {
     expect(body.error.code).toBe(-32600);
     await server.close();
   });
+
+  it('returns parse error for invalid json', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const server = await buildServer(config);
+    const res = await server.inject({
+      method: 'POST',
+      url: '/',
+      headers: { 'content-type': 'application/json' },
+      payload: '{ invalid json'
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json();
+    expect(body.error.code).toBe(-32700);
+    await server.close();
+  });
 });

@@ -8,7 +8,7 @@ import { PortalClient } from './portal/client';
 import { parseJsonRpcPayload, JsonRpcResponse } from './jsonrpc';
 import { handleJsonRpc } from './rpc/handlers';
 import { ConcurrencyLimiter } from './util/concurrency';
-import { normalizeError, unauthorizedError, overloadError, RpcError, invalidParams, invalidRequest } from './errors';
+import { normalizeError, unauthorizedError, overloadError, RpcError, invalidParams, invalidRequest, parseError } from './errors';
 
 const gunzipAsync = promisify(gunzip);
 
@@ -38,7 +38,7 @@ export async function buildServer(config: Config): Promise<FastifyInstance> {
       try {
         return JSON.parse(payload.toString('utf8'));
       } catch (err) {
-        throw invalidRequest('invalid request');
+        throw parseError('parse error');
       }
     }
   );
@@ -64,11 +64,18 @@ export async function buildServer(config: Config): Promise<FastifyInstance> {
       });
       return;
     }
-    if (
-      (err as { code?: string }).code?.startsWith('FST_ERR_CTP') ||
-      err.message.includes('invalid request') ||
-      err.message.includes('invalid json')
-    ) {
+    const errCode = (err as { code?: string }).code;
+    if (errCode === 'FST_ERR_CTP_BODY_INVALID_JSON' || errCode === 'FST_ERR_CTP_INVALID_JSON' || err instanceof SyntaxError) {
+      const rpcError = parseError('parse error');
+      metrics.errors_total.labels(rpcError.category).inc();
+      reply.code(rpcError.httpStatus).send({
+        jsonrpc: '2.0',
+        id: null,
+        error: { code: rpcError.code, message: rpcError.message }
+      });
+      return;
+    }
+    if (errCode?.startsWith('FST_ERR_CTP') || err.message.includes('invalid request')) {
       const rpcError = invalidRequest('invalid request');
       metrics.errors_total.labels(rpcError.category).inc();
       reply.code(rpcError.httpStatus).send({
