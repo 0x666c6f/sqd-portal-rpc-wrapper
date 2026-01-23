@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { gzipSync } from 'node:zlib';
 import { buildServer } from '../src/server';
 import { loadConfig } from '../src/config';
 
@@ -25,7 +26,8 @@ describe('server', () => {
     const res = await server.inject({
       method: 'POST',
       url: '/',
-      payload: { jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] }
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] })
     });
     expect(res.statusCode).toBe(200);
     const body = res.json();
@@ -42,7 +44,8 @@ describe('server', () => {
     const res = await server.inject({
       method: 'POST',
       url: '/',
-      payload: { jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] }
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] })
     });
     expect(res.statusCode).toBe(400);
     await server.close();
@@ -59,9 +62,49 @@ describe('server', () => {
     const res = await server.inject({
       method: 'POST',
       url: '/',
-      payload: { jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] }
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] })
     });
     expect(res.statusCode).toBe(401);
+    await server.close();
+  });
+
+  it('skips response for notifications', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const server = await buildServer(config);
+    const res = await server.inject({
+      method: 'POST',
+      url: '/',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ jsonrpc: '2.0', method: 'eth_chainId', params: [] })
+    });
+    expect(res.statusCode).toBe(204);
+    await server.close();
+  });
+
+  it('rejects oversized gzip payload', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1',
+      MAX_REQUEST_BODY_BYTES: '20'
+    });
+    const server = await buildServer(config);
+    const payload = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] });
+    const compressed = gzipSync(payload);
+    const res = await server.inject({
+      method: 'POST',
+      url: '/',
+      headers: { 'content-type': 'application/json', 'content-encoding': 'gzip' },
+      payload: compressed
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json();
+    expect(body.error.code).toBe(-32600);
     await server.close();
   });
 });

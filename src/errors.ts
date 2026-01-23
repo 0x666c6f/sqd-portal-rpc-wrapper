@@ -1,4 +1,5 @@
 export type ErrorCategory =
+  | 'invalid_request'
   | 'invalid_params'
   | 'unsupported_method'
   | 'unauthorized'
@@ -36,6 +37,15 @@ export function invalidParams(message: string): RpcError {
     code: -32602,
     httpStatus: 400,
     category: 'invalid_params'
+  });
+}
+
+export function invalidRequest(message = 'invalid request'): RpcError {
+  return new RpcError({
+    message,
+    code: -32600,
+    httpStatus: 400,
+    category: 'invalid_request'
   });
 }
 

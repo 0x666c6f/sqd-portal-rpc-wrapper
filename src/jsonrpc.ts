@@ -1,4 +1,4 @@
-import { invalidParams, RpcError } from './errors';
+import { invalidRequest, RpcError } from './errors';
 
 export interface JsonRpcRequest {
   jsonrpc: string;
@@ -27,17 +27,17 @@ export function isJsonRpcRequest(value: unknown): value is JsonRpcRequest {
 export function parseJsonRpcPayload(payload: unknown): JsonRpcRequest[] {
   if (Array.isArray(payload)) {
     if (payload.length === 0) {
-      throw invalidParams('invalid request');
+      throw invalidRequest('invalid request');
     }
     return payload.map((item) => {
       if (!isJsonRpcRequest(item)) {
-        throw invalidParams('invalid request');
+        throw invalidRequest('invalid request');
       }
       return item;
     });
   }
   if (!isJsonRpcRequest(payload)) {
-    throw invalidParams('invalid request');
+    throw invalidRequest('invalid request');
   }
   return [payload];
 }

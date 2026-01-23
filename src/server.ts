@@ -8,7 +8,7 @@ import { PortalClient } from './portal/client';
 import { parseJsonRpcPayload, JsonRpcResponse } from './jsonrpc';
 import { handleJsonRpc } from './rpc/handlers';
 import { ConcurrencyLimiter } from './util/concurrency';
-import { normalizeError, unauthorizedError, overloadError, RpcError, invalidParams } from './errors';
+import { normalizeError, unauthorizedError, overloadError, RpcError, invalidParams, invalidRequest } from './errors';
 
 const gunzipAsync = promisify(gunzip);
 
@@ -27,18 +27,49 @@ export async function buildServer(config: Config): Promise<FastifyInstance> {
     async (req: FastifyRequest, body: Buffer) => {
       const buffer = body as Buffer;
       const encoding = (req.headers['content-encoding'] || 'identity').toString();
-      const payload = encoding.includes('gzip') ? await gunzipAsync(buffer) : buffer;
+      let payload: Buffer;
+      try {
+        payload = encoding.includes('gzip')
+          ? await gunzipAsync(buffer, { maxOutputLength: config.maxRequestBodyBytes })
+          : buffer;
+      } catch (err) {
+        throw invalidRequest('invalid request');
+      }
       try {
         return JSON.parse(payload.toString('utf8'));
       } catch (err) {
-        throw new Error('invalid json');
+        throw invalidRequest('invalid request');
       }
     }
   );
 
   server.setErrorHandler((err, req, reply) => {
-    if (err.message.includes('invalid json')) {
-      const rpcError = invalidParams('invalid');
+    if (err instanceof RpcError) {
+      const rpcError = err;
+      metrics.errors_total.labels(rpcError.category).inc();
+      reply.code(rpcError.httpStatus).send({
+        jsonrpc: '2.0',
+        id: null,
+        error: { code: rpcError.code, message: rpcError.message }
+      });
+      return;
+    }
+    if (err && typeof err === 'object' && 'cause' in err && (err as { cause?: unknown }).cause instanceof RpcError) {
+      const rpcError = (err as { cause: RpcError }).cause;
+      metrics.errors_total.labels(rpcError.category).inc();
+      reply.code(rpcError.httpStatus).send({
+        jsonrpc: '2.0',
+        id: null,
+        error: { code: rpcError.code, message: rpcError.message }
+      });
+      return;
+    }
+    if (
+      (err as { code?: string }).code?.startsWith('FST_ERR_CTP') ||
+      err.message.includes('invalid request') ||
+      err.message.includes('invalid json')
+    ) {
+      const rpcError = invalidRequest('invalid request');
       metrics.errors_total.labels(rpcError.category).inc();
       reply.code(rpcError.httpStatus).send({
         jsonrpc: '2.0',
@@ -137,6 +168,7 @@ async function handleRpcRequest(
     let maxStatus = 200;
 
     for (const request of requests) {
+      const hasId = 'id' in request;
       const { response, httpStatus } = await handleJsonRpc(request, {
         config,
         portal,
@@ -145,15 +177,22 @@ async function handleRpcRequest(
         requestId,
         logger: req.log
       });
-      responses.push(response);
-      maxStatus = Math.max(maxStatus, httpStatus);
+      if (hasId) {
+        responses.push(response);
+        maxStatus = Math.max(maxStatus, httpStatus);
+      }
 
       const methodLabel = request.method || 'unknown';
       metrics.requests_total.labels(methodLabel, String(chainId), String(httpStatus)).inc();
-      if (response.error) {
+      if (hasId && response.error) {
         const errorCategory = toCategory(response.error.code);
         metrics.errors_total.labels(errorCategory).inc();
       }
+    }
+
+    if (responses.length === 0) {
+      reply.code(204).send();
+      return;
     }
 
     const output = Array.isArray(payload) ? responses : responses[0];
@@ -224,6 +263,8 @@ function extractSingleChainIdFromMap(config: Config): number {
 
 function toCategory(code: number): string {
   switch (code) {
+    case -32600:
+      return 'invalid_request';
     case -32601:
       return 'unsupported_method';
     case -32016:

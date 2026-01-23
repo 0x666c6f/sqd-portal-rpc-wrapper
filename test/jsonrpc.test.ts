@@ -16,6 +16,6 @@ describe('jsonrpc', () => {
   });
 
   it('rejects invalid payload', () => {
-    expect(() => parseJsonRpcPayload({} as any)).toThrow('invalid');
+    expect(() => parseJsonRpcPayload({} as any)).toThrow('invalid request');
   });
 });

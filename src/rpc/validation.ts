@@ -49,7 +49,12 @@ export async function parseBlockNumber(
 
 function parseBlockNumberValue(value: string | number, config: Config): number {
   const raw = typeof value === 'string' ? value : String(value);
-  const parsed = raw.startsWith('0x') ? BigInt(raw) : BigInt(raw);
+  let parsed: bigint;
+  try {
+    parsed = raw.startsWith('0x') ? BigInt(raw) : BigInt(raw);
+  } catch {
+    throw invalidParams('invalid block number');
+  }
   if (parsed < 0n || parsed > config.maxBlockNumber) {
     throw invalidParams('invalid block number');
   }
@@ -124,7 +129,7 @@ export async function parseLogFilter(
 
   const useFinalized = !filter.toBlock && fromBlock.useFinalized ? false : toBlock.useFinalized;
 
-  const blockRange = toBlock.number - fromBlock.number;
+  const blockRange = toBlock.number - fromBlock.number + 1;
   if (blockRange < 0) {
     throw invalidParams('invalid block range');
   }

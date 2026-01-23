@@ -51,4 +51,10 @@ describe('validation', () => {
     const result = await parseBlockNumber(portal as any, 'https://portal', '0x2a', config);
     expect(result.number).toBe(42);
   });
+
+  it('rejects invalid hex block number', async () => {
+    await expect(parseBlockNumber(portal as any, 'https://portal', '0xzz', config)).rejects.toThrow(
+      'invalid block number'
+    );
+  });
 });

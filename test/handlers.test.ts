@@ -33,7 +33,7 @@ describe('handlers', () => {
       { jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] },
       { config, portal: portal as any, chainId: 1, requestId: 'test' }
     );
-    expect(response.result).toBe('0x1');
+    expect(response!.result).toBe('0x1');
   });
 
   it('handles eth_getBlockByNumber empty', async () => {
@@ -41,7 +41,7 @@ describe('handlers', () => {
       { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: ['0x1', false] },
       { config, portal: portal as any, chainId: 1, requestId: 'test' }
     );
-    expect(response.result).toBeNull();
+    expect(response!.result).toBeNull();
   });
 
   it('rejects unsupported method', async () => {
@@ -50,7 +50,7 @@ describe('handlers', () => {
       { config, portal: portal as any, chainId: 1, requestId: 'test' }
     );
     expect(httpStatus).toBe(404);
-    expect(response.error?.code).toBe(-32601);
+    expect(response!.error?.code).toBe(-32601);
   });
 
   it('handles eth_getLogs', async () => {
@@ -58,7 +58,7 @@ describe('handlers', () => {
       { jsonrpc: '2.0', id: 1, method: 'eth_getLogs', params: [{ fromBlock: '0x5', toBlock: '0x5' }] },
       { config, portal: portalWithData as any, chainId: 1, requestId: 'test' }
     );
-    expect(Array.isArray(response.result)).toBe(true);
+    expect(Array.isArray(response!.result)).toBe(true);
   });
 
   it('handles eth_getTransactionByBlockNumberAndIndex', async () => {
@@ -66,7 +66,7 @@ describe('handlers', () => {
       { jsonrpc: '2.0', id: 1, method: 'eth_getTransactionByBlockNumberAndIndex', params: ['0x5', '0x0'] },
       { config, portal: portalWithData as any, chainId: 1, requestId: 'test' }
     );
-    expect(response.result).toBeTruthy();
+    expect(response!.result).toBeTruthy();
   });
 
   it('handles trace_block', async () => {
@@ -74,6 +74,6 @@ describe('handlers', () => {
       { jsonrpc: '2.0', id: 1, method: 'trace_block', params: ['0x5'] },
       { config, portal: portalWithData as any, chainId: 1, requestId: 'test' }
     );
-    expect(Array.isArray(response.result)).toBe(true);
+    expect(Array.isArray(response!.result)).toBe(true);
   });
 });
