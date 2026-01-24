@@ -6,6 +6,7 @@ import { resolveDataset } from '../portal/mapping';
 import { RpcError, invalidParams, methodNotSupported, normalizeError } from '../errors';
 import { convertBlockToRpc, convertLogToRpc, convertTraceToRpc, convertTxToRpc } from './conversion';
 import { assertArray, assertObject, parseBlockNumber, parseLogFilter, parseTransactionIndex } from './validation';
+import { metrics } from '../metrics';
 
 export interface HandlerContext {
   config: Config;
@@ -14,6 +15,7 @@ export interface HandlerContext {
   traceparent?: string;
   requestId: string;
   logger?: { info: (obj: Record<string, unknown>, msg: string) => void; warn?: (obj: Record<string, unknown>, msg: string) => void };
+  recordPortalHeaders?: (headers: { finalizedHeadNumber?: string; finalizedHeadHash?: string }) => void;
 }
 
 export async function handleJsonRpc(
@@ -27,6 +29,15 @@ export async function handleJsonRpc(
     return { response: successResponse(id, result), httpStatus: 200 };
   } catch (err) {
     const rpcError = err instanceof RpcError ? err : normalizeError(err);
+    if (rpcError.category === 'conflict') {
+      metrics.portal_conflict_total.labels(String(ctx.chainId)).inc();
+      const previousBlocks = rpcError.data?.previousBlocks;
+      const previousBlocksCount = Array.isArray(previousBlocks) ? previousBlocks.length : 0;
+      ctx.logger?.warn?.(
+        { requestId: ctx.requestId, method: request.method, chainId: ctx.chainId, previousBlocksCount },
+        'portal conflict'
+      );
+    }
     return { response: errorResponse(id, rpcError), httpStatus: rpcError.httpStatus };
   }
 }
@@ -75,6 +86,7 @@ async function handleGetBlockByNumber(request: JsonRpcRequest, ctx: HandlerConte
   }
   const baseUrl = resolveBaseUrl(ctx);
   const blockTag = await parseBlockNumber(ctx.portal, baseUrl, request.params[0], ctx.config, ctx.traceparent);
+  await validateStartBlock(ctx, baseUrl, blockTag.number);
 
   let fullTx = false;
   if (request.params.length > 1) {
@@ -95,7 +107,7 @@ async function handleGetBlockByNumber(request: JsonRpcRequest, ctx: HandlerConte
     transactions: [{}]
   };
 
-  const blocks = await ctx.portal.streamBlocks(baseUrl, blockTag.useFinalized, portalReq, ctx.traceparent);
+  const blocks = await ctx.portal.streamBlocks(baseUrl, blockTag.useFinalized, portalReq, ctx.traceparent, ctx.recordPortalHeaders);
   if (blocks.length === 0) {
     return null;
   }
@@ -109,6 +121,7 @@ async function handleGetTransactionByBlockNumberAndIndex(request: JsonRpcRequest
   }
   const baseUrl = resolveBaseUrl(ctx);
   const blockTag = await parseBlockNumber(ctx.portal, baseUrl, request.params[0], ctx.config, ctx.traceparent);
+  await validateStartBlock(ctx, baseUrl, blockTag.number);
   const txIndex = parseTransactionIndex(request.params[1]);
 
   const portalReq = {
@@ -122,7 +135,7 @@ async function handleGetTransactionByBlockNumberAndIndex(request: JsonRpcRequest
     transactions: [{}]
   };
 
-  const blocks = await ctx.portal.streamBlocks(baseUrl, blockTag.useFinalized, portalReq, ctx.traceparent);
+  const blocks = await ctx.portal.streamBlocks(baseUrl, blockTag.useFinalized, portalReq, ctx.traceparent, ctx.recordPortalHeaders);
   if (blocks.length === 0) {
     return null;
   }
@@ -144,6 +157,7 @@ async function handleGetLogs(request: JsonRpcRequest, ctx: HandlerContext): Prom
 
   const baseUrl = resolveBaseUrl(ctx);
   const parsed = await parseLogFilter(ctx.portal, baseUrl, request.params[0], ctx.config, ctx.traceparent);
+  await validateStartBlock(ctx, baseUrl, parsed.fromBlock);
   ctx.logger?.info(
     { requestId: ctx.requestId, method: 'eth_getLogs', chainId: ctx.chainId, fromBlock: parsed.fromBlock, toBlock: parsed.toBlock },
     'rpc log range'
@@ -166,7 +180,7 @@ async function handleGetLogs(request: JsonRpcRequest, ctx: HandlerContext): Prom
     logs: [parsed.logFilter]
   };
 
-  const blocks = await ctx.portal.streamBlocks(baseUrl, parsed.useFinalized, portalReq, ctx.traceparent);
+  const blocks = await ctx.portal.streamBlocks(baseUrl, parsed.useFinalized, portalReq, ctx.traceparent, ctx.recordPortalHeaders);
   const logs: Record<string, unknown>[] = [];
   for (const block of blocks) {
     for (const log of block.logs || []) {
@@ -183,6 +197,7 @@ async function handleTraceBlock(request: JsonRpcRequest, ctx: HandlerContext): P
   }
   const baseUrl = resolveBaseUrl(ctx);
   const blockTag = await parseBlockNumber(ctx.portal, baseUrl, request.params[0], ctx.config, ctx.traceparent);
+  await validateStartBlock(ctx, baseUrl, blockTag.number);
 
   const portalReq = {
     type: 'evm' as const,
@@ -197,7 +212,7 @@ async function handleTraceBlock(request: JsonRpcRequest, ctx: HandlerContext): P
     transactions: [{}]
   };
 
-  const blocks = await ctx.portal.streamBlocks(baseUrl, blockTag.useFinalized, portalReq, ctx.traceparent);
+  const blocks = await ctx.portal.streamBlocks(baseUrl, blockTag.useFinalized, portalReq, ctx.traceparent, ctx.recordPortalHeaders);
   if (blocks.length === 0) {
     return [];
   }
@@ -212,4 +227,11 @@ async function handleTraceBlock(request: JsonRpcRequest, ctx: HandlerContext): P
     traces.push(convertTraceToRpc(trace, block.header, txHashByIndex));
   }
   return traces;
+}
+
+async function validateStartBlock(ctx: HandlerContext, baseUrl: string, fromBlock: number) {
+  const metadata = await ctx.portal.getMetadata(baseUrl, ctx.traceparent);
+  if (typeof metadata.start_block === 'number' && fromBlock < metadata.start_block) {
+    throw invalidParams('invalid params');
+  }
 }

@@ -11,6 +11,8 @@
 - `PORTAL_CHAIN_ID`: required in single-chain mode unless map has one entry
 - `PORTAL_API_KEY`: optional portal auth
 - `PORTAL_API_KEY_HEADER`: header name, default `X-API-Key`
+- `PORTAL_REALTIME_MODE`: `auto|required|disabled`, default `auto`
+- `PORTAL_METADATA_TTL_MS`: metadata cache TTL, default `300000`
 
 ## Limits
 - `MAX_LOG_BLOCK_RANGE`: default `1000000`

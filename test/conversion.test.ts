@@ -51,11 +51,23 @@ describe('conversion', () => {
     expect(result.transactions).toEqual(['0xtx']);
   });
 
+  it('handles block without transactions (hashes)', () => {
+    const block: PortalBlockResponse = { header };
+    const result = convertBlockToRpc(block, false);
+    expect(result.transactions).toEqual([]);
+  });
+
   it('converts block with full transactions', () => {
     const block: PortalBlockResponse = { header, transactions: [tx] };
     const result = convertBlockToRpc(block, true);
     expect(Array.isArray(result.transactions)).toBe(true);
     expect((result.transactions as Record<string, unknown>[])[0].hash).toBe('0xtx');
+  });
+
+  it('handles block without transactions (full tx)', () => {
+    const block: PortalBlockResponse = { header };
+    const result = convertBlockToRpc(block, true);
+    expect(result.transactions).toEqual([]);
   });
 
   it('preserves nonce formatting and omits null totalDifficulty', () => {
@@ -86,6 +98,26 @@ describe('conversion', () => {
     expect(result.maxPriorityFeePerGas).toBe('0x7');
     expect(result.chainId).toBe('0x1');
     expect(result.yParity).toBe('0x1');
+  });
+
+  it('omits optional tx fields when missing', () => {
+    const minimal: PortalTransaction = {
+      transactionIndex: 1,
+      hash: '0xtx2',
+      from: '0xfrom',
+      value: '0x0',
+      input: '0x',
+      nonce: '0x0',
+      gas: '0x1',
+      type: '0x0'
+    };
+    const result = convertTxToRpc(minimal, header);
+    expect(result.to).toBeNull();
+    expect(result.gasPrice).toBeUndefined();
+    expect(result.maxFeePerGas).toBeUndefined();
+    expect(result.maxPriorityFeePerGas).toBeUndefined();
+    expect(result.chainId).toBeUndefined();
+    expect(result.yParity).toBeUndefined();
   });
 
   it('sets to null for contract creation', () => {
@@ -184,6 +216,37 @@ describe('conversion', () => {
     const result = convertTraceToRpc(trace, header, { 0: '0xtx' });
     expect(result.type).toBe('reward');
     expect((result.action as Record<string, unknown>).rewardType).toBe('block');
+  });
+
+  it('uses action fields when provided', () => {
+    const trace: PortalTrace = {
+      transactionIndex: 0,
+      traceAddress: [],
+      type: 'call',
+      subtraces: 0,
+      callFrom: '0xignored',
+      callTo: '0xignoredto',
+      action: {
+        from: '0xfrom',
+        to: '0xto',
+        value: '0x1',
+        gas: '0x2',
+        input: '0x',
+        callType: 'call',
+        init: '0xinit',
+        address: '0xaddr',
+        balance: '0x3',
+        refundAddress: '0xref',
+        author: '0xauth',
+        rewardType: 'block'
+      }
+    };
+    const result = convertTraceToRpc(trace, header, {});
+    const action = result.action as Record<string, unknown>;
+    expect(action.from).toBe('0xfrom');
+    expect(action.to).toBe('0xto');
+    expect(action.refundAddress).toBe('0xref');
+    expect(action.rewardType).toBe('block');
   });
 
   it('sets trace error and omit result', () => {

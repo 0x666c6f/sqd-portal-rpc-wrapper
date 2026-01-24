@@ -20,6 +20,7 @@ const FALLBACK_BLOCK_NUMBER = Number.parseInt(process.env.LIVE_FALLBACK_BLOCK_NU
 let wrapperUrl = '';
 let wrapperRootUrl = '';
 let server: Awaited<ReturnType<typeof buildServer>> | null = null;
+let wrapperEndpoints: { label: string; url: string; headers?: Record<string, string> }[] = [];
 let targetBlock = 0;
 let txIndex = 0;
 let txCount = 0;
@@ -39,6 +40,10 @@ describeLive('live rpc parity', () => {
       typeof address === 'string' ? address : `http://127.0.0.1:${(address as { port: number }).port}`;
     wrapperRootUrl = baseUrl;
     wrapperUrl = `${baseUrl}/v1/evm/${CHAIN_ID}`;
+    wrapperEndpoints = [
+      { label: 'path', url: wrapperUrl },
+      { label: 'header', url: wrapperRootUrl, headers: { 'x-chain-id': `${CHAIN_ID}` } }
+    ];
 
     const baseChainId = parseHexQuantity(await rpcResult(BASE_RPC_URL, 'eth_chainId', []));
     if (baseChainId !== CHAIN_ID) {
@@ -97,50 +102,48 @@ describeLive('live rpc parity', () => {
 
   it('eth_chainId', async () => {
     const base = await rpcResult(BASE_RPC_URL, 'eth_chainId', []);
-    const wrapper = await rpcResult(wrapperUrl, 'eth_chainId', []);
-    expect(wrapper).toEqual(base);
-  }, TEST_TIMEOUT_MS);
-
-  it('eth_chainId via header path', async () => {
-    const base = await rpcResult(BASE_RPC_URL, 'eth_chainId', []);
-    const wrapper = await rpcResultWithHeaders(wrapperRootUrl, 'eth_chainId', [], { 'x-chain-id': `${CHAIN_ID}` });
-    expect(wrapper).toEqual(base);
+    for (const endpoint of wrapperEndpoints) {
+      const wrapper = await wrapperResult(endpoint, 'eth_chainId', []);
+      expect(wrapper).toEqual(base);
+    }
   }, TEST_TIMEOUT_MS);
 
   it('eth_blockNumber', async () => {
     const base = parseHexQuantity(await rpcResult(BASE_RPC_URL, 'eth_blockNumber', []));
-    const wrapper = parseHexQuantity(await rpcResult(wrapperUrl, 'eth_blockNumber', []));
-    expect(Math.abs(base - wrapper)).toBeLessThanOrEqual(BLOCK_NUMBER_TOLERANCE);
-  }, TEST_TIMEOUT_MS);
-
-  it('eth_blockNumber via header path', async () => {
-    const base = parseHexQuantity(await rpcResult(BASE_RPC_URL, 'eth_blockNumber', []));
-    const wrapper = parseHexQuantity(await rpcResultWithHeaders(wrapperRootUrl, 'eth_blockNumber', [], { 'x-chain-id': `${CHAIN_ID}` }));
-    expect(Math.abs(base - wrapper)).toBeLessThanOrEqual(BLOCK_NUMBER_TOLERANCE);
+    for (const endpoint of wrapperEndpoints) {
+      const wrapper = parseHexQuantity(await wrapperResult(endpoint, 'eth_blockNumber', []));
+      expect(Math.abs(base - wrapper)).toBeLessThanOrEqual(BLOCK_NUMBER_TOLERANCE);
+    }
   }, TEST_TIMEOUT_MS);
 
   it('eth_getBlockByNumber', async () => {
     const blockHex = toHex(targetBlock);
     const base = matchedBlocks?.base ?? (await rpcResult(BASE_RPC_URL, 'eth_getBlockByNumber', [blockHex, false]));
-    const wrapper = matchedBlocks?.wrapper ?? (await rpcResult(wrapperUrl, 'eth_getBlockByNumber', [blockHex, false]));
-    expect(normalizeBlock(wrapper)).toEqual(normalizeBlock(base));
+    for (const endpoint of wrapperEndpoints) {
+      const wrapper = matchedBlocks?.wrapper ?? (await wrapperResult(endpoint, 'eth_getBlockByNumber', [blockHex, false]));
+      expect(normalizeBlock(wrapper)).toEqual(normalizeBlock(base));
+    }
   }, TEST_TIMEOUT_MS);
 
   it('eth_getBlockByNumber full tx', async () => {
     const blockHex = toHex(targetBlock);
     const baseBlock =
       matchedBlocks?.base ?? (await rpcResult(BASE_RPC_URL, 'eth_getBlockByNumber', [blockHex, true]));
-    const wrapperBlock =
-      matchedBlocks?.wrapper ?? (await rpcResult(wrapperUrl, 'eth_getBlockByNumber', [blockHex, true]));
-    expect(normalizeBlockWithTransactions(wrapperBlock)).toEqual(normalizeBlockWithTransactions(baseBlock));
+    for (const endpoint of wrapperEndpoints) {
+      const wrapperBlock =
+        matchedBlocks?.wrapper ?? (await wrapperResult(endpoint, 'eth_getBlockByNumber', [blockHex, true]));
+      expect(normalizeBlockWithTransactions(wrapperBlock)).toEqual(normalizeBlockWithTransactions(baseBlock));
+    }
   }, TEST_TIMEOUT_MS);
 
   it('eth_getTransactionByBlockNumberAndIndex', async () => {
     const blockHex = toHex(targetBlock);
     const txHex = toHex(txIndex);
     const base = await rpcResult(BASE_RPC_URL, 'eth_getTransactionByBlockNumberAndIndex', [blockHex, txHex]);
-    const wrapper = await rpcResult(wrapperUrl, 'eth_getTransactionByBlockNumberAndIndex', [blockHex, txHex]);
-    expect(normalizeTx(wrapper)).toEqual(normalizeTx(base));
+    for (const endpoint of wrapperEndpoints) {
+      const wrapper = await wrapperResult(endpoint, 'eth_getTransactionByBlockNumberAndIndex', [blockHex, txHex]);
+      expect(normalizeTx(wrapper)).toEqual(normalizeTx(base));
+    }
   }, TEST_TIMEOUT_MS);
 
   it('eth_getTransactionByBlockNumberAndIndex out of range', async () => {
@@ -148,8 +151,10 @@ describeLive('live rpc parity', () => {
     const index = txCount > 0 ? txCount + 5 : 99999;
     const txHex = toHex(index);
     const base = await rpcResult(BASE_RPC_URL, 'eth_getTransactionByBlockNumberAndIndex', [blockHex, txHex]);
-    const wrapper = await rpcResult(wrapperUrl, 'eth_getTransactionByBlockNumberAndIndex', [blockHex, txHex]);
-    expect(wrapper).toEqual(base);
+    for (const endpoint of wrapperEndpoints) {
+      const wrapper = await wrapperResult(endpoint, 'eth_getTransactionByBlockNumberAndIndex', [blockHex, txHex]);
+      expect(wrapper).toEqual(base);
+    }
   }, TEST_TIMEOUT_MS);
 
   it('eth_getLogs', async () => {
@@ -163,10 +168,12 @@ describeLive('live rpc parity', () => {
       }
     }
     const base = await rpcResult(BASE_RPC_URL, 'eth_getLogs', [filter]);
-    const wrapper = await rpcResult(wrapperUrl, 'eth_getLogs', [filter]);
     const normalizedBase = normalizeLogs(base);
-    const normalizedWrapper = normalizeLogs(wrapper);
-    expect(normalizedWrapper).toEqual(normalizedBase);
+    for (const endpoint of wrapperEndpoints) {
+      const wrapper = await wrapperResult(endpoint, 'eth_getLogs', [filter]);
+      const normalizedWrapper = normalizeLogs(wrapper);
+      expect(normalizedWrapper).toEqual(normalizedBase);
+    }
   }, TEST_TIMEOUT_MS);
 
   it('eth_getLogs with address + topic0', async () => {
@@ -186,8 +193,23 @@ describeLive('live rpc parity', () => {
       topics: sample.topics && sample.topics.length > 0 ? [sample.topics[0]] : undefined
     };
     const base = await rpcResult(BASE_RPC_URL, 'eth_getLogs', [filter]);
-    const wrapper = await rpcResult(wrapperUrl, 'eth_getLogs', [filter]);
-    expect(normalizeLogs(wrapper)).toEqual(normalizeLogs(base));
+    const normalizedBase = normalizeLogs(base);
+    for (const endpoint of wrapperEndpoints) {
+      const wrapper = await wrapperResult(endpoint, 'eth_getLogs', [filter]);
+      expect(normalizeLogs(wrapper)).toEqual(normalizedBase);
+    }
+  }, TEST_TIMEOUT_MS);
+
+  it('eth_getLogs across range', async () => {
+    const fromBlock = toHex(targetBlock);
+    const toBlock = toHex(targetBlock + 1);
+    const filter = { fromBlock, toBlock };
+    const base = await rpcResult(BASE_RPC_URL, 'eth_getLogs', [filter]);
+    const normalizedBase = normalizeLogs(base);
+    for (const endpoint of wrapperEndpoints) {
+      const wrapper = await wrapperResult(endpoint, 'eth_getLogs', [filter]);
+      expect(normalizeLogs(wrapper)).toEqual(normalizedBase);
+    }
   }, TEST_TIMEOUT_MS);
 });
 
@@ -236,6 +258,17 @@ async function rpcResultWithHeaders(url: string, method: string, params: unknown
     throw new Error(`rpc error ${err.code ?? 'unknown'} for ${method}: ${err.message ?? 'unknown'}`);
   }
   return body.result;
+}
+
+async function wrapperResult(
+  endpoint: { url: string; headers?: Record<string, string> },
+  method: string,
+  params: unknown[]
+) {
+  if (endpoint.headers) {
+    return rpcResultWithHeaders(endpoint.url, method, params, endpoint.headers);
+  }
+  return rpcResult(endpoint.url, method, params);
 }
 
 function parseHexQuantity(value: unknown): number {

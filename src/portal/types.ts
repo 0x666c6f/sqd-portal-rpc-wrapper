@@ -54,6 +54,13 @@ export interface PortalHeadResponse {
   hash: string;
 }
 
+export interface PortalMetadataResponse {
+  dataset: string;
+  aliases?: string[];
+  real_time?: boolean;
+  start_block?: number;
+}
+
 export interface PortalBlockResponse {
   header: PortalBlockHeader;
   transactions?: PortalTransaction[];

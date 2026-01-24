@@ -7,7 +7,8 @@ import {
   invalidRequest,
   parseError,
   normalizeError,
-  RpcError
+  RpcError,
+  conflictError
 } from '../src/errors';
 
 describe('errors', () => {
@@ -50,5 +51,11 @@ describe('errors', () => {
   it('normalizes non-error input', () => {
     const err = normalizeError('nope');
     expect(err.code).toBe(-32603);
+  });
+
+  it('includes previous blocks in conflict', () => {
+    const err = conflictError([{ number: 1 }]);
+    expect(err.data?.retryable).toBe(true);
+    expect(Array.isArray(err.data?.previousBlocks)).toBe(true);
   });
 });

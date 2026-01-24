@@ -34,6 +34,17 @@ describe('config', () => {
     ).toThrow('SERVICE_MODE');
   });
 
+  it('rejects invalid realtime mode', () => {
+    expect(() =>
+      loadConfig({
+        SERVICE_MODE: 'single',
+        PORTAL_DATASET: 'ethereum-mainnet',
+        PORTAL_CHAIN_ID: '1',
+        PORTAL_REALTIME_MODE: 'nope'
+      })
+    ).toThrow('PORTAL_REALTIME_MODE');
+  });
+
   it('defaults service mode to single', () => {
     const cfg = loadConfig({
       PORTAL_DATASET: 'ethereum-mainnet',

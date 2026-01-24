@@ -4,11 +4,13 @@ import { randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
 import { Config } from './config';
 import { metrics, metricsPayload } from './metrics';
-import { PortalClient } from './portal/client';
+import { PortalClient, normalizePortalBaseUrl } from './portal/client';
+import type { PortalStreamHeaders } from './portal/client';
 import { parseJsonRpcPayload, JsonRpcResponse } from './jsonrpc';
 import { handleJsonRpc } from './rpc/handlers';
 import { ConcurrencyLimiter } from './util/concurrency';
 import { normalizeError, unauthorizedError, overloadError, RpcError, invalidParams, invalidRequest, parseError } from './errors';
+import { defaultDatasetMap } from './portal/mapping';
 
 const gunzipAsync = promisify(gunzip);
 
@@ -101,11 +103,17 @@ export async function buildServer(config: Config): Promise<FastifyInstance> {
   const portal = new PortalClient(config, { logger: server.log });
   const limiter = new ConcurrencyLimiter(config.maxConcurrentRequests);
 
+  await prefetchMetadata(server, portal, config);
+
   server.get('/healthz', async () => ({ status: 'ok' }));
   server.get('/readyz', async () => ({ status: 'ready' }));
   server.get('/metrics', async (_req, reply) => {
     const payload = await metricsPayload();
     reply.type('text/plain; version=0.0.4').send(payload);
+  });
+  server.get('/capabilities', async (_req, reply) => {
+    const payload = await buildCapabilities(config, portal);
+    reply.send(payload);
   });
 
   server.post('/', async (req, reply) => {
@@ -174,6 +182,15 @@ async function handleRpcRequest(
     const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : randomUUID();
     const payload = req.body;
     const requests = parseJsonRpcPayload(payload);
+    const portalHeaders: PortalStreamHeaders = {};
+    const recordPortalHeaders = (headers: PortalStreamHeaders) => {
+      if (headers.finalizedHeadNumber && !portalHeaders.finalizedHeadNumber) {
+        portalHeaders.finalizedHeadNumber = headers.finalizedHeadNumber;
+      }
+      if (headers.finalizedHeadHash && !portalHeaders.finalizedHeadHash) {
+        portalHeaders.finalizedHeadHash = headers.finalizedHeadHash;
+      }
+    };
 
     const responses: JsonRpcResponse[] = [];
     let maxStatus = 200;
@@ -186,7 +203,8 @@ async function handleRpcRequest(
         chainId,
         traceparent,
         requestId,
-        logger: req.log
+        logger: req.log,
+        recordPortalHeaders
       });
       if (hasId) {
         responses.push(response);
@@ -211,6 +229,12 @@ async function handleRpcRequest(
     const labelMethod = Array.isArray(payload) ? 'batch' : requests[0]?.method || 'unknown';
     metrics.response_bytes_total.labels(labelMethod, String(chainId)).inc(Buffer.byteLength(body));
 
+    if (portalHeaders.finalizedHeadNumber) {
+      reply.header('X-Sqd-Finalized-Head-Number', portalHeaders.finalizedHeadNumber);
+    }
+    if (portalHeaders.finalizedHeadHash) {
+      reply.header('X-Sqd-Finalized-Head-Hash', portalHeaders.finalizedHeadHash);
+    }
     reply.type('application/json').code(maxStatus).send(output);
     const durationMs = Date.now() - startedAt;
     req.log.info(
@@ -313,3 +337,100 @@ export const __test__ = {
   extractChainId,
   extractSingleChainIdFromMap
 };
+
+const JSON_RPC_METHODS = [
+  'eth_chainId',
+  'eth_blockNumber',
+  'eth_getBlockByNumber',
+  'eth_getTransactionByBlockNumberAndIndex',
+  'eth_getLogs',
+  'trace_block'
+];
+
+async function prefetchMetadata(server: FastifyInstance, portal: PortalClient, config: Config) {
+  if (process.env.NODE_ENV === 'test') {
+    return;
+  }
+  const chainDatasets = resolveChainDatasets(config);
+  const entries = Object.entries(chainDatasets);
+  await Promise.all(
+    entries.map(async ([chainId, dataset]) => {
+      try {
+        const baseUrl = portal.buildDatasetBaseUrl(dataset);
+        const metadata = await portal.getMetadata(baseUrl);
+        const realTime = resolveRealtimeEnabled(metadata, config.portalRealtimeMode);
+        metrics.portal_realtime_enabled.labels(chainId).set(realTime ? 1 : 0);
+        server.log.info({ chainId: Number(chainId), dataset, realTime }, 'portal metadata prefetched');
+      } catch (err) {
+        server.log.warn(
+          { chainId: Number(chainId), dataset, err: err instanceof Error ? err.message : String(err) },
+          'portal metadata prefetch failed'
+        );
+      }
+    })
+  );
+}
+
+async function buildCapabilities(config: Config, portal: PortalClient) {
+  const chainDatasets = resolveChainDatasets(config);
+  const chains: Record<string, { dataset: string; aliases: string[]; startBlock?: number; realTime: boolean }> = {};
+  for (const [chainId, dataset] of Object.entries(chainDatasets)) {
+    let aliases: string[] = [];
+    let startBlock: number | undefined;
+    let realTime = false;
+    try {
+      const baseUrl = portal.buildDatasetBaseUrl(dataset);
+      const metadata = await portal.getMetadata(baseUrl);
+      aliases = Array.isArray(metadata.aliases) ? metadata.aliases : [];
+      startBlock = typeof metadata.start_block === 'number' ? metadata.start_block : undefined;
+      realTime = resolveRealtimeEnabled(metadata, config.portalRealtimeMode);
+      metrics.portal_realtime_enabled.labels(chainId).set(realTime ? 1 : 0);
+    } catch {
+      realTime = resolveRealtimeEnabled(null, config.portalRealtimeMode);
+      metrics.portal_realtime_enabled.labels(chainId).set(realTime ? 1 : 0);
+    }
+    chains[chainId] = { dataset, aliases, startBlock, realTime };
+  }
+
+  return {
+    service: { name: 'sqd-portal-rpc-wrapper', version: process.env.npm_package_version || '0.1.0' },
+    mode: config.serviceMode,
+    methods: JSON_RPC_METHODS,
+    chains,
+    portalEndpoints: portalEndpointsTemplate(config)
+  };
+}
+
+function portalEndpointsTemplate(config: Config) {
+  const base = normalizePortalBaseUrl(config.portalBaseUrl);
+  const template = base.includes('{dataset}') ? base : `${base}/{dataset}`;
+  return {
+    head: `${template}/head`,
+    finalizedHead: `${template}/finalized-head`,
+    stream: `${template}/stream`,
+    finalizedStream: `${template}/finalized-stream`,
+    metadata: `${template}/metadata`
+  };
+}
+
+function resolveChainDatasets(config: Config): Record<string, string> {
+  if (config.serviceMode === 'single') {
+    const chainId = config.portalChainId ?? extractSingleChainIdFromMap(config);
+    const dataset = config.portalDataset ?? config.portalDatasetMap[String(chainId)];
+    if (!dataset) {
+      return {};
+    }
+    return { [String(chainId)]: dataset };
+  }
+  return { ...defaultDatasetMap(), ...config.portalDatasetMap };
+}
+
+function resolveRealtimeEnabled(metadata: { real_time?: boolean } | null, mode: Config['portalRealtimeMode']): boolean {
+  if (mode === 'disabled') {
+    return false;
+  }
+  if (mode === 'required' && !metadata?.real_time) {
+    throw new Error('portal realtime required');
+  }
+  return Boolean(metadata?.real_time);
+}

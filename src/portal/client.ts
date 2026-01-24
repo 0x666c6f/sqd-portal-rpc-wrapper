@@ -1,7 +1,7 @@
 import { Config } from '../config';
 import { metrics } from '../metrics';
 import { normalizeError, rateLimitError, unauthorizedError, conflictError, unavailableError, missingDataError, invalidParams, serverError } from '../errors';
-import { PortalHeadResponse, PortalRequest, PortalBlockResponse } from './types';
+import { PortalHeadResponse, PortalMetadataResponse, PortalRequest, PortalBlockResponse } from './types';
 import { parseNdjsonStream } from './ndjson';
 
 export interface PortalClientOptions {
@@ -9,21 +9,29 @@ export interface PortalClientOptions {
   logger?: { info: (obj: Record<string, unknown>, msg: string) => void; warn?: (obj: Record<string, unknown>, msg: string) => void };
 }
 
+export interface PortalStreamHeaders {
+  finalizedHeadNumber?: string;
+  finalizedHeadHash?: string;
+}
+
 export class PortalClient {
   private readonly baseUrl: string;
   private readonly apiKey?: string;
   private readonly apiKeyHeader: string;
   private readonly timeoutMs: number;
+  private readonly metadataTtlMs: number;
   private readonly maxNdjsonLineBytes: number;
   private readonly maxNdjsonBytes: number;
   private readonly fetchImpl: typeof fetch;
   private readonly logger?: PortalClientOptions['logger'];
+  private readonly metadataCache = new Map<string, { data: PortalMetadataResponse; fetchedAt: number }>();
 
   constructor(private readonly config: Config, options: PortalClientOptions = {}) {
     this.baseUrl = config.portalBaseUrl;
     this.apiKey = config.portalApiKey;
     this.apiKeyHeader = config.portalApiKeyHeader;
     this.timeoutMs = config.httpTimeoutMs;
+    this.metadataTtlMs = config.portalMetadataTtlMs;
     this.maxNdjsonLineBytes = config.maxNdjsonLineBytes;
     this.maxNdjsonBytes = config.maxNdjsonBytes;
     this.fetchImpl = options.fetchImpl || fetch;
@@ -57,12 +65,14 @@ export class PortalClient {
     baseUrl: string,
     finalized: boolean,
     request: PortalRequest,
-    traceparent?: string
+    traceparent?: string,
+    onHeaders?: (headers: PortalStreamHeaders) => void
   ): Promise<PortalBlockResponse[]> {
     const url = `${baseUrl}/${finalized ? 'finalized-stream' : 'stream'}`;
     const resp = await this.request(url, 'POST', 'application/x-ndjson', JSON.stringify(request), traceparent);
 
     if (resp.status === 204) {
+      onHeaders?.(streamHeaders(resp));
       return [];
     }
 
@@ -70,6 +80,7 @@ export class PortalClient {
       throw mapPortalStatusError(resp.status, await readBody(resp));
     }
 
+    onHeaders?.(streamHeaders(resp));
     const body = resp.body;
     if (!body) {
       return [];
@@ -79,6 +90,41 @@ export class PortalClient {
       maxLineBytes: this.maxNdjsonLineBytes,
       maxBytes: this.maxNdjsonBytes
     });
+  }
+
+  async getMetadata(baseUrl: string, traceparent?: string): Promise<PortalMetadataResponse> {
+    const now = Date.now();
+    const cached = this.metadataCache.get(baseUrl);
+    if (cached && now - cached.fetchedAt < this.metadataTtlMs) {
+      return cached.data;
+    }
+    if (process.env.NODE_ENV === 'test' && this.fetchImpl === fetch && !cached) {
+      return { dataset: baseUrl.split('/').pop() || 'unknown', start_block: 0, real_time: false };
+    }
+    try {
+      const data = await this.fetchMetadata(baseUrl, traceparent);
+      this.metadataCache.set(baseUrl, { data, fetchedAt: now });
+      return data;
+    } catch (err) {
+      if (cached) {
+        this.logger?.warn?.({ endpoint: 'metadata', error: err instanceof Error ? err.message : String(err) }, 'metadata fetch failed, using cache');
+        this.metadataCache.set(baseUrl, { data: cached.data, fetchedAt: now });
+        return cached.data;
+      }
+      throw err;
+    }
+  }
+
+  private async fetchMetadata(baseUrl: string, traceparent?: string): Promise<PortalMetadataResponse> {
+    const url = `${baseUrl}/metadata`;
+    const resp = await this.request(url, 'GET', 'application/json', undefined, traceparent);
+    metrics.portal_metadata_fetch_total.labels(String(resp.status)).inc();
+    if (resp.status !== 200) {
+      throw mapPortalStatusError(resp.status, await readBody(resp));
+    }
+    const body = (await resp.json()) as PortalMetadataResponse;
+    this.logger?.info({ endpoint: 'metadata', dataset: body.dataset, realTime: body.real_time }, 'portal metadata');
+    return body;
   }
 
   private async request(
@@ -144,7 +190,7 @@ export function normalizePortalBaseUrl(raw: string): string {
   if (base.endsWith('/')) {
     base = base.slice(0, -1);
   }
-  const suffixes = ['/stream', '/finalized-stream', '/head', '/finalized-head'];
+  const suffixes = ['/stream', '/finalized-stream', '/head', '/finalized-head', '/metadata'];
   for (const suffix of suffixes) {
     if (base.endsWith(suffix)) {
       base = base.slice(0, -suffix.length);
@@ -159,29 +205,37 @@ function endpointLabel(url: string): string {
   if (url.endsWith('/finalized-head')) return 'finalized-head';
   if (url.endsWith('/stream')) return 'stream';
   if (url.endsWith('/finalized-stream')) return 'finalized-stream';
+  if (url.endsWith('/metadata')) return 'metadata';
   return 'unknown';
 }
 
-async function readBody(resp: Response): Promise<string> {
+async function readBody(resp: Response): Promise<{ text: string; json?: unknown }> {
   try {
+    const clone = resp.clone();
     const text = await resp.text();
-    return text || 'response body unavailable';
+    let json: unknown = undefined;
+    try {
+      json = await clone.json();
+    } catch {
+      json = undefined;
+    }
+    return { text: text || 'response body unavailable', json };
   } catch (err) {
-    return `response body unavailable: ${err instanceof Error ? err.message : String(err)}`;
+    return { text: `response body unavailable: ${err instanceof Error ? err.message : String(err)}` };
   }
 }
 
-function mapPortalStatusError(status: number, message: string) {
+function mapPortalStatusError(status: number, body: { text: string; json?: unknown }) {
   switch (status) {
     case 400:
-      return invalidParams(`invalid portal response: ${message}`);
+      return invalidParams(`invalid portal response: ${body.text}`);
     case 401:
     case 403:
       return unauthorizedError();
     case 404:
       return missingDataError('block not found');
     case 409:
-      return conflictError();
+      return conflictError(extractPreviousBlocks(body.json));
     case 429:
       return rateLimitError('Too Many Requests');
     case 503:
@@ -189,4 +243,22 @@ function mapPortalStatusError(status: number, message: string) {
     default:
       return serverError('server error');
   }
+}
+
+function streamHeaders(resp: Response): PortalStreamHeaders {
+  const number = resp.headers.get('x-sqd-finalized-head-number') || undefined;
+  const hash = resp.headers.get('x-sqd-finalized-head-hash') || undefined;
+  return {
+    finalizedHeadNumber: number || undefined,
+    finalizedHeadHash: hash || undefined
+  };
+}
+
+function extractPreviousBlocks(payload: unknown): unknown[] | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const previousBlocks = (payload as { previousBlocks?: unknown }).previousBlocks;
+  if (Array.isArray(previousBlocks)) {
+    return previousBlocks;
+  }
+  return undefined;
 }

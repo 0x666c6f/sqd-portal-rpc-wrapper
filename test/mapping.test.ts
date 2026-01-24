@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveDataset, supportedChainIds } from '../src/portal/mapping';
+import { defaultDatasetMap, resolveDataset, supportedChainIds } from '../src/portal/mapping';
 import { loadConfig } from '../src/config';
 
 describe('mapping', () => {
@@ -23,5 +23,10 @@ describe('mapping', () => {
 
   it('lists supported chain ids', () => {
     expect(supportedChainIds()).toContain(1);
+  });
+
+  it('returns default dataset map copy', () => {
+    const map = defaultDatasetMap();
+    expect(map['1']).toBe('ethereum-mainnet');
   });
 });

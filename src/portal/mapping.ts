@@ -39,3 +39,7 @@ export function resolveDataset(chainId: number, config: Config): string | null {
 export function supportedChainIds(): number[] {
   return Object.keys(defaultChainToDataset).map((v) => Number(v));
 }
+
+export function defaultDatasetMap(): Record<string, string> {
+  return { ...defaultChainToDataset };
+}

@@ -120,13 +120,17 @@ export function unauthorizedError(): RpcError {
   });
 }
 
-export function conflictError(): RpcError {
+export function conflictError(previousBlocks?: unknown[]): RpcError {
+  const data: Record<string, unknown> = { retryable: true };
+  if (previousBlocks && previousBlocks.length > 0) {
+    data.previousBlocks = previousBlocks;
+  }
   return new RpcError({
     message: 'conflict',
     code: -32603,
     httpStatus: 409,
     category: 'conflict',
-    data: { retryable: true }
+    data
   });
 }
 

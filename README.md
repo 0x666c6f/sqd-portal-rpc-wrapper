@@ -44,6 +44,7 @@ curl -s -X POST http://localhost:8080/v1/evm/1 \
 ## Endpoints
 - `POST /` (single-chain, or multi-chain with `X-Chain-Id`)
 - `POST /v1/evm/{chainId}` (multi-chain)
+- `GET /capabilities`
 - `GET /healthz`
 - `GET /readyz`
 - `GET /metrics`
@@ -60,6 +61,8 @@ curl -s -X POST http://localhost:8080/v1/evm/1 \
 | `PORTAL_CHAIN_ID` | | Required for single-chain if map not single-entry |
 | `PORTAL_API_KEY` | | Optional portal key |
 | `PORTAL_API_KEY_HEADER` | `X-API-Key` | |
+| `PORTAL_REALTIME_MODE` | `auto` | `auto|required|disabled` |
+| `PORTAL_METADATA_TTL_MS` | `300000` | Metadata cache TTL |
 | `WRAPPER_API_KEY` | | Optional incoming auth |
 | `WRAPPER_API_KEY_HEADER` | `X-API-Key` | |
 | `MAX_LOG_BLOCK_RANGE` | `1000000` | |
@@ -83,6 +86,9 @@ docker compose up --build
 - `requests_total{method,chainId,status}`
 - `portal_requests_total{endpoint,status}`
 - `portal_latency_seconds{endpoint}`
+- `portal_metadata_fetch_total{status}`
+- `portal_conflict_total{chainId}`
+- `portal_realtime_enabled{chainId}`
 - `ndjson_lines_total`
 - `response_bytes_total{method,chainId}`
 - `errors_total{category}`

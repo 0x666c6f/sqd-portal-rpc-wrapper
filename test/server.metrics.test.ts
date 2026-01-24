@@ -67,7 +67,7 @@ describe('server error category metrics', () => {
     const valueFor = (category: string) => {
       const line = metrics
         .split('\n')
-        .find((entry) => entry.startsWith(`errors_total{category=\"${category}\"}`));
+        .find((entry) => entry.startsWith(`errors_total{category="${category}"}`));
       if (!line) return 0;
       return Number(line.split(' ').pop());
     };

@@ -195,7 +195,7 @@ describe('validation', () => {
     ).rejects.toThrow('invalid address filter');
   });
 
-  it('forces non-finalized when only fromBlock is finalized', async () => {
+  it('uses finalized head when fromBlock is finalized', async () => {
     const portalRange = {
       fetchHead: async (_baseUrl: string, finalized: boolean) => ({
         head: { number: 10, hash: '0xabc' },
@@ -208,7 +208,7 @@ describe('validation', () => {
       { fromBlock: 'finalized' },
       config
     );
-    expect(result.useFinalized).toBe(false);
+    expect(result.useFinalized).toBe(true);
   });
 
   it('rejects fromBlock greater than toBlock', async () => {

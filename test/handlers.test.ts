@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { handleJsonRpc } from '../src/rpc/handlers';
 import { loadConfig } from '../src/config';
+import { conflictError } from '../src/errors';
 
 const config = loadConfig({
   SERVICE_MODE: 'single',
@@ -11,6 +12,7 @@ const config = loadConfig({
 const portal = {
   fetchHead: async () => ({ head: { number: 42, hash: '0xabc' }, finalizedAvailable: false }),
   streamBlocks: async () => [],
+  getMetadata: async () => ({ dataset: 'ethereum-mainnet', start_block: 0, real_time: true }),
   buildDatasetBaseUrl: (dataset: string) => `https://portal/${dataset}`
 };
 
@@ -24,6 +26,7 @@ const portalWithData = {
       traces: [{ transactionIndex: 0, traceAddress: [], type: 'call', subtraces: 0, action: {}, callFrom: '0xfrom', callTo: '0xto', callValue: '0x1', callGas: '0x2' }]
     }
   ],
+  getMetadata: async () => ({ dataset: 'ethereum-mainnet', start_block: 0, real_time: true }),
   buildDatasetBaseUrl: (dataset: string) => `https://portal/${dataset}`
 };
 
@@ -60,6 +63,19 @@ describe('handlers', () => {
     );
     const result = response!.result as { transactions?: { hash: string }[] };
     expect(result.transactions?.[0].hash).toBe('0xtx');
+  });
+
+  it('rejects block before start_block', async () => {
+    const portalStart = {
+      ...portal,
+      getMetadata: async () => ({ dataset: 'ethereum-mainnet', start_block: 10, real_time: true })
+    };
+    const { response, httpStatus } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: ['0x1', false] },
+      { config, portal: portalStart as any, chainId: 1, requestId: 'test' }
+    );
+    expect(httpStatus).toBe(400);
+    expect(response!.error?.code).toBe(-32602);
   });
 
   it('rejects unsupported method', async () => {
@@ -160,5 +176,22 @@ describe('handlers', () => {
       { config, portal: portal as any, chainId: 1, requestId: 'test' }
     );
     expect(response!.result).toEqual([]);
+  });
+
+  it('logs portal conflicts', async () => {
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const portalConflict = {
+      ...portal,
+      streamBlocks: async () => {
+        throw conflictError([{ number: 1 }]);
+      }
+    };
+    const { response, httpStatus } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: ['0x1', false] },
+      { config, portal: portalConflict as any, chainId: 1, requestId: 'test', logger }
+    );
+    expect(httpStatus).toBe(409);
+    expect(response!.error?.code).toBe(-32603);
+    expect(logger.warn).toHaveBeenCalled();
   });
 });

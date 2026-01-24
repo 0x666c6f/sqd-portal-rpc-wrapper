@@ -120,14 +120,19 @@ export async function parseLogFilter(
     toBlock = await parseBlockNumber(portal, baseUrl, filter.toBlock, config, traceparent);
   }
   if (!toBlock) {
-    const { head } = await portal.fetchHead(baseUrl, false, '', traceparent);
-    toBlock = { number: head.number, useFinalized: false };
+    if (fromBlock?.useFinalized) {
+      const { head, finalizedAvailable } = await portal.fetchHead(baseUrl, true, 'finalized', traceparent);
+      toBlock = { number: head.number, useFinalized: finalizedAvailable };
+    } else {
+      const { head } = await portal.fetchHead(baseUrl, false, '', traceparent);
+      toBlock = { number: head.number, useFinalized: false };
+    }
   }
   if (!fromBlock) {
     fromBlock = { number: toBlock.number, useFinalized: false };
   }
 
-  const useFinalized = !filter.toBlock && fromBlock.useFinalized ? false : toBlock.useFinalized;
+  const useFinalized = toBlock.useFinalized;
 
   if (toBlock.number < fromBlock.number) {
     throw invalidParams('invalid block range');

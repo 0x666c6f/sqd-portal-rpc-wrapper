@@ -1,4 +1,4 @@
-import { Counter, Histogram, collectDefaultMetrics, Registry } from 'prom-client';
+import { Counter, Gauge, Histogram, collectDefaultMetrics, Registry } from 'prom-client';
 
 export const registry = new Registry();
 collectDefaultMetrics({ register: registry });
@@ -22,6 +22,24 @@ export const metrics = {
     labelNames: ['endpoint'] as const,
     registers: [registry],
     buckets: [0.1, 0.25, 0.5, 1, 2, 5, 10]
+  }),
+  portal_metadata_fetch_total: new Counter({
+    name: 'portal_metadata_fetch_total',
+    help: 'Total portal metadata fetches',
+    labelNames: ['status'] as const,
+    registers: [registry]
+  }),
+  portal_conflict_total: new Counter({
+    name: 'portal_conflict_total',
+    help: 'Total portal conflict responses',
+    labelNames: ['chainId'] as const,
+    registers: [registry]
+  }),
+  portal_realtime_enabled: new Gauge({
+    name: 'portal_realtime_enabled',
+    help: 'Portal realtime enabled flag',
+    labelNames: ['chainId'] as const,
+    registers: [registry]
   }),
   ndjson_lines_total: new Counter({
     name: 'ndjson_lines_total',

@@ -1,6 +1,7 @@
 import { normalizePortalBaseUrl } from './portal/client';
 
 export type ServiceMode = 'single' | 'multi';
+export type PortalRealtimeMode = 'auto' | 'required' | 'disabled';
 
 export interface Config {
   serviceMode: ServiceMode;
@@ -12,6 +13,8 @@ export interface Config {
   portalDataset?: string;
   portalDatasetMap: Record<string, string>;
   portalChainId?: number;
+  portalRealtimeMode: PortalRealtimeMode;
+  portalMetadataTtlMs: number;
   maxLogBlockRange: number;
   maxLogAddresses: number;
   maxBlockNumber: bigint;
@@ -34,6 +37,7 @@ const DEFAULT_MAX_CONCURRENCY = 128;
 const DEFAULT_MAX_NDJSON_LINE_BYTES = 8 * 1024 * 1024;
 const DEFAULT_MAX_NDJSON_BYTES = 64 * 1024 * 1024;
 const DEFAULT_MAX_BODY_BYTES = 8 * 1024 * 1024;
+const DEFAULT_PORTAL_METADATA_TTL_MS = 300_000;
 
 export function loadConfig(env = process.env): Config {
   const serviceMode = (env.SERVICE_MODE || 'single').toLowerCase();
@@ -50,6 +54,11 @@ export function loadConfig(env = process.env): Config {
   const portalDataset = env.PORTAL_DATASET;
   const portalDatasetMap = parseDatasetMap(env.PORTAL_DATASET_MAP);
   const portalChainId = parseOptionalInt(env.PORTAL_CHAIN_ID || env.CHAIN_ID);
+  const portalRealtimeMode = (env.PORTAL_REALTIME_MODE || 'auto').toLowerCase();
+  if (portalRealtimeMode !== 'auto' && portalRealtimeMode !== 'required' && portalRealtimeMode !== 'disabled') {
+    throw new Error('PORTAL_REALTIME_MODE must be auto, required, or disabled');
+  }
+  const portalMetadataTtlMs = parseNumber(env.PORTAL_METADATA_TTL_MS, DEFAULT_PORTAL_METADATA_TTL_MS);
 
   const maxLogBlockRange = parseNumber(env.MAX_LOG_BLOCK_RANGE, DEFAULT_MAX_LOG_BLOCK_RANGE);
   const maxLogAddresses = parseNumber(env.MAX_LOG_ADDRESSES, DEFAULT_MAX_LOG_ADDRESSES);
@@ -82,6 +91,8 @@ export function loadConfig(env = process.env): Config {
     portalDataset,
     portalDatasetMap,
     portalChainId,
+    portalRealtimeMode,
+    portalMetadataTtlMs,
     maxLogBlockRange,
     maxLogAddresses,
     maxBlockNumber,
