@@ -107,6 +107,19 @@ describe('PortalClient', () => {
     ).rejects.toThrow('Too Many Requests');
   });
 
+  it('maps invalid params errors', async () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const fetchImpl = async () => new Response('bad request', { status: 400 });
+    const client = new PortalClient(cfg, { fetchImpl });
+    await expect(
+      client.streamBlocks('https://portal.sqd.dev/datasets/ethereum-mainnet', false, { type: 'evm', fromBlock: 1, toBlock: 1 })
+    ).rejects.toThrow('invalid portal response');
+  });
+
   it('maps unauthorized errors', async () => {
     const cfg = loadConfig({
       SERVICE_MODE: 'single',
@@ -144,6 +157,38 @@ describe('PortalClient', () => {
     await expect(
       client.streamBlocks('https://portal.sqd.dev/datasets/ethereum-mainnet', false, { type: 'evm', fromBlock: 1, toBlock: 1 })
     ).rejects.toThrow('unavailable');
+  });
+
+  it('maps unknown status to server error', async () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const fetchImpl = async () => new Response('boom', { status: 500 });
+    const client = new PortalClient(cfg, { fetchImpl });
+    await expect(
+      client.streamBlocks('https://portal.sqd.dev/datasets/ethereum-mainnet', false, { type: 'evm', fromBlock: 1, toBlock: 1 })
+    ).rejects.toThrow('server error');
+  });
+
+  it('includes readBody failure context', async () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const fetchImpl = async () =>
+      ({
+        status: 400,
+        text: async () => {
+          throw new Error('text failed');
+        }
+      } as unknown as Response);
+    const client = new PortalClient(cfg, { fetchImpl });
+    await expect(
+      client.streamBlocks('https://portal.sqd.dev/datasets/ethereum-mainnet', false, { type: 'evm', fromBlock: 1, toBlock: 1 })
+    ).rejects.toThrow('response body unavailable');
   });
 
   it('fetchHead maps missing data', async () => {

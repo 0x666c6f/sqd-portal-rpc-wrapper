@@ -33,4 +33,16 @@ describe('ndjson parser', () => {
     const result = await parseNdjsonStream(stream, { maxLineBytes: 1024, maxBytes: 2048 });
     expect(result[0].header.number).toBe(3);
   });
+
+  it('parses web ReadableStream', async () => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode('{"header":{"number":4}}\n'));
+        controller.close();
+      }
+    });
+    const result = await parseNdjsonStream(stream, { maxLineBytes: 1024, maxBytes: 2048 });
+    expect(result[0].header.number).toBe(4);
+  });
 });

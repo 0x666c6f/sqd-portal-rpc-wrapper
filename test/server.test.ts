@@ -214,6 +214,74 @@ describe('server', () => {
     await server.close();
   });
 
+  it('returns batch responses with mixed methods', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const server = await buildServer(config);
+    const res = await server.inject({
+      method: 'POST',
+      url: '/',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify([
+        { jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] },
+        { jsonrpc: '2.0', id: 2, method: 'eth_sendRawTransaction', params: [] }
+      ])
+    });
+    expect(res.statusCode).toBe(404);
+    const body = res.json();
+    expect(Array.isArray(body)).toBe(true);
+    expect(body[0].result).toBe('0x1');
+    expect(body[1].error.code).toBe(-32601);
+    await server.close();
+  });
+
+  it('skips notifications in batch', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const server = await buildServer(config);
+    const res = await server.inject({
+      method: 'POST',
+      url: '/',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify([
+        { jsonrpc: '2.0', method: 'eth_chainId', params: [] },
+        { jsonrpc: '2.0', id: 2, method: 'eth_chainId', params: [] }
+      ])
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(Array.isArray(body)).toBe(true);
+    expect(body).toHaveLength(1);
+    expect(body[0].id).toBe(2);
+    await server.close();
+  });
+
+  it('returns 204 for batch notifications only', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const server = await buildServer(config);
+    const res = await server.inject({
+      method: 'POST',
+      url: '/',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify([
+        { jsonrpc: '2.0', method: 'eth_chainId', params: [] },
+        { jsonrpc: '2.0', method: 'eth_blockNumber', params: [] }
+      ])
+    });
+    expect(res.statusCode).toBe(204);
+    await server.close();
+  });
+
   it('rejects when overloaded', async () => {
     const config = loadConfig({
       SERVICE_MODE: 'single',
@@ -360,6 +428,23 @@ describe('server', () => {
     expect(res.statusCode).toBe(400);
     const body = res.json();
     expect(body.error.code).toBe(-32600);
+    await server.close();
+  });
+
+  it('rejects invalid gzip payload', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const server = await buildServer(config);
+    const res = await server.inject({
+      method: 'POST',
+      url: '/',
+      headers: { 'content-type': 'application/json', 'content-encoding': 'gzip' },
+      payload: Buffer.from('not gzip')
+    });
+    expect(res.statusCode).toBe(400);
     await server.close();
   });
 
