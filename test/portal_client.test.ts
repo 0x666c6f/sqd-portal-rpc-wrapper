@@ -487,6 +487,34 @@ describe('PortalClient', () => {
     expect(warn).toHaveBeenCalled();
   });
 
+  it('handles request errors when warn logger missing', async () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const fetchImpl = async () => {
+      throw new Error('boom');
+    };
+    const client = new PortalClient(cfg, { fetchImpl, logger: { info: vi.fn() } });
+    await expect((client as any).request('https://portal.sqd.dev/datasets/ethereum-mainnet/stream', 'GET', 'application/json')).rejects.toThrow(
+      'boom'
+    );
+  });
+
+  it('logs request success', async () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const info = vi.fn();
+    const fetchImpl = async () => new Response(JSON.stringify({ number: 1, hash: '0xabc' }), { status: 200 });
+    const client = new PortalClient(cfg, { fetchImpl, logger: { info } });
+    await client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false, '');
+    expect(info).toHaveBeenCalled();
+  });
+
   it('normalizes fetch errors to rpc error', async () => {
     const cfg = loadConfig({
       SERVICE_MODE: 'single',
@@ -585,7 +613,31 @@ describe('PortalClient', () => {
     const result = await client.getMetadata('https://portal.sqd.dev/datasets/ethereum-mainnet');
     expect(result.start_block).toBe(0);
     expect(result.real_time).toBe(false);
+    const unknown = await client.getMetadata('https://portal.sqd.dev/datasets/');
+    expect(unknown.dataset).toBe('unknown');
     process.env.NODE_ENV = prevEnv;
+  });
+
+  it('uses cached metadata when refresh throws non-error', async () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1',
+      PORTAL_METADATA_TTL_MS: '0'
+    });
+    const warn = vi.fn();
+    const client = new PortalClient(cfg, { fetchImpl: async () => new Response(null, { status: 200 }), logger: { info: vi.fn(), warn } });
+    const baseUrl = 'https://portal.sqd.dev/datasets/ethereum-mainnet';
+    (client as any).metadataCache.set(baseUrl, {
+      data: { dataset: 'ethereum-mainnet', start_block: 9, real_time: true },
+      fetchedAt: Date.now()
+    });
+    (client as any).fetchMetadata = async () => {
+      throw 'boom';
+    };
+    const result = await client.getMetadata(baseUrl);
+    expect(result.start_block).toBe(9);
+    expect(warn).toHaveBeenCalled();
   });
 
   it('throws when metadata fetch fails without cache', async () => {

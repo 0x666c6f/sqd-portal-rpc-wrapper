@@ -24,6 +24,11 @@ describe('validation', () => {
     expect(result.number).toBe(123);
   });
 
+  it('parses empty block tag as latest', async () => {
+    const result = await parseBlockNumber(portal as any, 'https://portal', '', config);
+    expect(result.number).toBe(123);
+  });
+
   it('rejects pending', async () => {
     await expect(parseBlockNumber(portal as any, 'https://portal', 'pending', config)).rejects.toThrow(
       'pending block not found'
@@ -133,6 +138,21 @@ describe('validation', () => {
       config
     );
     expect(result.logFilter.topic1).toHaveLength(2);
+  });
+
+  it('parses topic2 and topic3 filters', async () => {
+    const result = await parseLogFilter(
+      portal as any,
+      'https://portal',
+      {
+        fromBlock: '0x1',
+        toBlock: '0x1',
+        topics: [null, null, ['0x' + 'aa'.repeat(32)], ['0x' + 'bb'.repeat(32)]]
+      },
+      config
+    );
+    expect(result.logFilter.topic2).toHaveLength(1);
+    expect(result.logFilter.topic3).toHaveLength(1);
   });
 
   it('rejects invalid topics filter', async () => {

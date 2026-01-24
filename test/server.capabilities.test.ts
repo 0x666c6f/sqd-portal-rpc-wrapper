@@ -370,6 +370,48 @@ describe('capabilities endpoint', () => {
     vi.unmock('../src/portal/mapping');
   });
 
+  it('falls back to default service version when npm version missing', async () => {
+    vi.resetModules();
+    const prevVersion = process.env.npm_package_version;
+    process.env.npm_package_version = '';
+    vi.doMock('../src/portal/client', () => {
+      class PortalClient {
+        constructor(_config: unknown) {}
+        buildDatasetBaseUrl(dataset: string) {
+          return `https://portal/${dataset}`;
+        }
+        async getMetadata() {
+          return { dataset: 'base-mainnet', real_time: true };
+        }
+      }
+      return {
+        PortalClient,
+        normalizePortalBaseUrl: (value: string) => value
+      };
+    });
+    vi.doMock('../src/portal/mapping', async () => {
+      const actual = await vi.importActual<typeof import('../src/portal/mapping')>('../src/portal/mapping');
+      return { ...actual, defaultDatasetMap: () => ({}) };
+    });
+
+    const { buildServer } = await import('../src/server');
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET_MAP: JSON.stringify({ '8453': 'base-mainnet' })
+    });
+    const server = await buildServer(config);
+    const res = await server.inject({ method: 'GET', url: '/capabilities' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.service.version).toBe('0.1.0');
+    await server.close();
+    process.env.npm_package_version = prevVersion;
+
+    vi.resetModules();
+    vi.unmock('../src/portal/client');
+    vi.unmock('../src/portal/mapping');
+  });
+
   it('prefetches metadata outside test env', async () => {
     vi.resetModules();
     const prevEnv = process.env.NODE_ENV;
@@ -384,6 +426,48 @@ describe('capabilities endpoint', () => {
         async getMetadata() {
           calls += 1;
           return { dataset: 'ethereum-mainnet', real_time: true };
+        }
+      }
+      return {
+        PortalClient,
+        normalizePortalBaseUrl: (value: string) => value
+      };
+    });
+    vi.doMock('../src/portal/mapping', async () => {
+      const actual = await vi.importActual<typeof import('../src/portal/mapping')>('../src/portal/mapping');
+      return { ...actual, defaultDatasetMap: () => ({ '1': 'ethereum-mainnet' }) };
+    });
+
+    const { buildServer } = await import('../src/server');
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const server = await buildServer(config);
+    expect(calls).toBe(1);
+    await server.close();
+    process.env.NODE_ENV = prevEnv;
+
+    vi.resetModules();
+    vi.unmock('../src/portal/client');
+    vi.unmock('../src/portal/mapping');
+  });
+
+  it('prefetches metadata when realtime false', async () => {
+    vi.resetModules();
+    const prevEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    let calls = 0;
+    vi.doMock('../src/portal/client', () => {
+      class PortalClient {
+        constructor(_config: unknown) {}
+        buildDatasetBaseUrl(dataset: string) {
+          return `https://portal/${dataset}`;
+        }
+        async getMetadata() {
+          calls += 1;
+          return { dataset: 'ethereum-mainnet', real_time: false };
         }
       }
       return {
@@ -448,6 +532,85 @@ describe('capabilities endpoint', () => {
     expect(calls).toBe(1);
     await server.close();
     process.env.NODE_ENV = prevEnv;
+
+    vi.resetModules();
+    vi.unmock('../src/portal/client');
+    vi.unmock('../src/portal/mapping');
+  });
+
+  it('handles prefetch metadata non-error throws', async () => {
+    vi.resetModules();
+    const prevEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    vi.doMock('../src/portal/client', () => {
+      class PortalClient {
+        constructor(_config: unknown) {}
+        buildDatasetBaseUrl(dataset: string) {
+          return `https://portal/${dataset}`;
+        }
+        async getMetadata() {
+          throw 'boom';
+        }
+      }
+      return {
+        PortalClient,
+        normalizePortalBaseUrl: (value: string) => value
+      };
+    });
+    vi.doMock('../src/portal/mapping', async () => {
+      const actual = await vi.importActual<typeof import('../src/portal/mapping')>('../src/portal/mapping');
+      return { ...actual, defaultDatasetMap: () => ({ '1': 'ethereum-mainnet' }) };
+    });
+
+    const { buildServer } = await import('../src/server');
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const server = await buildServer(config);
+    await server.close();
+    process.env.NODE_ENV = prevEnv;
+
+    vi.resetModules();
+    vi.unmock('../src/portal/client');
+    vi.unmock('../src/portal/mapping');
+  });
+
+  it('omits startBlock when metadata value not numeric', async () => {
+    vi.resetModules();
+    vi.doMock('../src/portal/client', () => {
+      class PortalClient {
+        constructor(_config: unknown) {}
+        buildDatasetBaseUrl(dataset: string) {
+          return `https://portal/${dataset}`;
+        }
+        async getMetadata() {
+          return { dataset: 'ethereum-mainnet', start_block: '1', real_time: true };
+        }
+      }
+      return {
+        PortalClient,
+        normalizePortalBaseUrl: (value: string) => value
+      };
+    });
+    vi.doMock('../src/portal/mapping', async () => {
+      const actual = await vi.importActual<typeof import('../src/portal/mapping')>('../src/portal/mapping');
+      return { ...actual, defaultDatasetMap: () => ({ '1': 'ethereum-mainnet' }) };
+    });
+
+    const { buildServer } = await import('../src/server');
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const server = await buildServer(config);
+    const res = await server.inject({ method: 'GET', url: '/capabilities' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.chains['1'].startBlock).toBeUndefined();
+    await server.close();
 
     vi.resetModules();
     vi.unmock('../src/portal/client');

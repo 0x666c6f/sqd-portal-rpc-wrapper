@@ -35,8 +35,7 @@ export async function buildServer(config: Config): Promise<FastifyInstance> {
           ? await gunzipAsync(buffer, { maxOutputLength: config.maxRequestBodyBytes })
           : buffer;
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        const reason = message.includes('maxOutputLength') || message.includes('output length') ? 'size_limit' : 'corrupt';
+        const { message, reason } = classifyGunzipError(err);
         req.log.warn({ err: message, reason }, 'gzip decompression failed');
         throw invalidRequest('invalid request');
       }
@@ -269,6 +268,12 @@ function extractChainId(raw: unknown): number | null {
   return null;
 }
 
+function classifyGunzipError(err: unknown): { message: string; reason: 'size_limit' | 'corrupt' } {
+  const message = err instanceof Error ? err.message : String(err);
+  const reason = message.includes('maxOutputLength') || message.includes('output length') ? 'size_limit' : 'corrupt';
+  return { message, reason };
+}
+
 function normalizeHeaderValue(value: unknown): string | undefined {
   if (typeof value === 'string') return value;
   if (Array.isArray(value) && typeof value[0] === 'string') return value[0];
@@ -335,7 +340,9 @@ function toCategory(code: number): string {
 
 export const __test__ = {
   extractChainId,
-  extractSingleChainIdFromMap
+  extractSingleChainIdFromMap,
+  normalizeHeaderValue,
+  classifyGunzipError
 };
 
 const JSON_RPC_METHODS = [
@@ -359,7 +366,7 @@ async function prefetchMetadata(server: FastifyInstance, portal: PortalClient, c
         const baseUrl = portal.buildDatasetBaseUrl(dataset);
         const metadata = await portal.getMetadata(baseUrl);
         const realTime = resolveRealtimeEnabled(metadata, config.portalRealtimeMode);
-        metrics.portal_realtime_enabled.labels(chainId).set(realTime ? 1 : 0);
+        metrics.portal_realtime_enabled.labels(chainId).set(Number(realTime));
         server.log.info({ chainId: Number(chainId), dataset, realTime }, 'portal metadata prefetched');
       } catch (err) {
         server.log.warn(
@@ -384,10 +391,10 @@ async function buildCapabilities(config: Config, portal: PortalClient) {
       aliases = Array.isArray(metadata.aliases) ? metadata.aliases : [];
       startBlock = typeof metadata.start_block === 'number' ? metadata.start_block : undefined;
       realTime = resolveRealtimeEnabled(metadata, config.portalRealtimeMode);
-      metrics.portal_realtime_enabled.labels(chainId).set(realTime ? 1 : 0);
+      metrics.portal_realtime_enabled.labels(chainId).set(Number(realTime));
     } catch {
       realTime = resolveRealtimeEnabled(null, config.portalRealtimeMode);
-      metrics.portal_realtime_enabled.labels(chainId).set(realTime ? 1 : 0);
+      metrics.portal_realtime_enabled.labels(chainId).set(Number(realTime));
     }
     chains[chainId] = { dataset, aliases, startBlock, realTime };
   }

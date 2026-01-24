@@ -6,7 +6,7 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
-      exclude: ['dist', 'test']
+      exclude: ['dist', 'test', 'coverage', '.eslintrc.cjs']
     }
   }
 });

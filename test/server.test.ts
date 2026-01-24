@@ -9,6 +9,22 @@ describe('server', () => {
     expect(serverTest.extractChainId(1)).toBe(1);
   });
 
+  it('extracts chain id from hex and array values', () => {
+    expect(serverTest.extractChainId('0x2a')).toBe(42);
+    expect(serverTest.extractChainId(['0x2a'])).toBe(42);
+  });
+
+  it('returns null for invalid chain id', () => {
+    expect(serverTest.extractChainId('0xzz')).toBeNull();
+    expect(serverTest.extractChainId(['bad'])).toBeNull();
+  });
+
+  it('normalizes header values', () => {
+    expect(serverTest.normalizeHeaderValue('secret')).toBe('secret');
+    expect(serverTest.normalizeHeaderValue(['secret'])).toBe('secret');
+    expect(serverTest.normalizeHeaderValue([1] as any)).toBeUndefined();
+  });
+
   it('uses portalChainId when dataset map has multiple entries', () => {
     const config = loadConfig({
       SERVICE_MODE: 'single',
@@ -26,6 +42,23 @@ describe('server', () => {
     });
     const server = await buildServer(config);
     const res = await server.inject({ method: 'GET', url: '/healthz' });
+    expect(res.statusCode).toBe(200);
+    await server.close();
+  });
+
+  it('accepts chain id header arrays', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const server = await buildServer(config);
+    const res = await server.inject({
+      method: 'POST',
+      url: '/',
+      headers: { 'content-type': 'application/json', 'x-chain-id': ['1'] as unknown as string },
+      payload: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] })
+    });
     expect(res.statusCode).toBe(200);
     await server.close();
   });
@@ -109,6 +142,42 @@ describe('server', () => {
     await server.close();
   });
 
+  it('maps fastify invalid json error codes to parse error', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const server = await buildServer(config);
+    server.get('/ctperr-json', async () => {
+      const err = new Error('ctp-json');
+      (err as { code?: string }).code = 'FST_ERR_CTP_BODY_INVALID_JSON';
+      throw err;
+    });
+    const res = await server.inject({ method: 'GET', url: '/ctperr-json' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe(-32700);
+    await server.close();
+  });
+
+  it('maps fastify invalid json code to parse error', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const server = await buildServer(config);
+    server.get('/ctperr-json-alt', async () => {
+      const err = new Error('ctp-json-alt');
+      (err as { code?: string }).code = 'FST_ERR_CTP_INVALID_JSON';
+      throw err;
+    });
+    const res = await server.inject({ method: 'GET', url: '/ctperr-json-alt' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe(-32700);
+    await server.close();
+  });
+
   it('maps syntax errors to parse error', async () => {
     const config = loadConfig({
       SERVICE_MODE: 'single',
@@ -122,6 +191,24 @@ describe('server', () => {
     const res = await server.inject({ method: 'GET', url: '/syntax' });
     expect(res.statusCode).toBe(400);
     expect(res.json().error.code).toBe(-32700);
+    await server.close();
+  });
+
+  it('maps error with RpcError cause', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const server = await buildServer(config);
+    server.get('/cause', async () => {
+      const err = new Error('boom');
+      (err as { cause?: unknown }).cause = invalidParams('invalid params');
+      throw err;
+    });
+    const res = await server.inject({ method: 'GET', url: '/cause' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe(-32602);
     await server.close();
   });
 
@@ -453,6 +540,45 @@ describe('server', () => {
     await server.close();
   });
 
+  it('rejects api key header non-string array', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1',
+      WRAPPER_API_KEY: 'secret'
+    });
+    const server = await buildServer(config);
+    const res = await server.inject({
+      method: 'POST',
+      url: '/',
+      headers: { 'content-type': 'application/json', 'x-api-key': [1] as unknown as string },
+      payload: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] })
+    });
+    expect(res.statusCode).toBe(401);
+    await server.close();
+  });
+
+  it('uses traceparent and request id headers', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const server = await buildServer(config);
+    const res = await server.inject({
+      method: 'POST',
+      url: '/',
+      headers: {
+        'content-type': 'application/json',
+        traceparent: '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01',
+        'x-request-id': 'req-test'
+      },
+      payload: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] })
+    });
+    expect(res.statusCode).toBe(200);
+    await server.close();
+  });
+
   it('rejects invalid request payload', async () => {
     const config = loadConfig({
       SERVICE_MODE: 'single',
@@ -469,6 +595,23 @@ describe('server', () => {
     expect(res.statusCode).toBe(400);
     const body = res.json();
     expect(body.error.code).toBe(-32600);
+    await server.close();
+  });
+
+  it('handles empty method name', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const server = await buildServer(config);
+    const res = await server.inject({
+      method: 'POST',
+      url: '/',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ jsonrpc: '2.0', id: 1, method: '', params: [] })
+    });
+    expect(res.statusCode).toBe(404);
     await server.close();
   });
 
@@ -593,6 +736,34 @@ describe('server', () => {
     });
     const server = await buildServer(config);
     const payload = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] });
+    const compressed = gzipSync(payload);
+    const res = await server.inject({
+      method: 'POST',
+      url: '/',
+      headers: { 'content-type': 'application/vnd.custom+json', 'content-encoding': 'gzip' },
+      payload: compressed
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json();
+    expect(body.error.code).toBe(-32600);
+    await server.close();
+  });
+
+  it('rejects gzip payload that exceeds max output length', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1',
+      MAX_REQUEST_BODY_BYTES: '1000'
+    });
+    const server = await buildServer(config);
+    const payload = JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'eth_chainId',
+      params: [],
+      padding: 'a'.repeat(50000)
+    });
     const compressed = gzipSync(payload);
     const res = await server.inject({
       method: 'POST',

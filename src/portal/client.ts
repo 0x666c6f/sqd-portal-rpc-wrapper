@@ -159,6 +159,7 @@ export class PortalClient {
         signal: controller.signal
       });
 
+      clearTimeout(timeout);
       const elapsed = (performance.now() - start) / 1000;
       metrics.portal_requests_total.labels(endpointLabel(url), String(resp.status)).inc();
       metrics.portal_latency_seconds.labels(endpointLabel(url)).observe(elapsed);
@@ -166,10 +167,9 @@ export class PortalClient {
 
       return resp;
     } catch (err) {
+      clearTimeout(timeout);
       this.logger?.warn?.({ endpoint: endpointLabel(url), error: err instanceof Error ? err.message : String(err) }, 'portal error');
       throw normalizeError(err);
-    } finally {
-      clearTimeout(timeout);
     }
   }
 

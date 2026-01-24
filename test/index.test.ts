@@ -87,4 +87,40 @@ describe('index', () => {
     vi.unmock('../src/config');
     vi.unmock('../src/server');
   });
+
+  it('runMain uses default start', async () => {
+    vi.resetModules();
+    const server = { listen: vi.fn().mockResolvedValue(undefined), close: vi.fn().mockResolvedValue(undefined) };
+    const loadConfig = vi.fn().mockReturnValue({ listenHost: '127.0.0.1', listenPort: 1234 });
+    const buildServer = vi.fn().mockResolvedValue(server);
+
+    vi.doMock('../src/config', () => ({ loadConfig }));
+    vi.doMock('../src/server', () => ({ buildServer }));
+
+    const { runMain } = await import('../src/index');
+    const onSpy = vi.spyOn(process, 'on');
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((_code?: number) => undefined) as never);
+
+    await runMain();
+
+    const sigintHandler = onSpy.mock.calls.find(([event]) => event === 'SIGINT')?.[1] as (() => void) | undefined;
+    const sigtermHandler = onSpy.mock.calls.find(([event]) => event === 'SIGTERM')?.[1] as (() => void) | undefined;
+    if (sigintHandler) {
+      process.removeListener('SIGINT', sigintHandler);
+    }
+    if (sigtermHandler) {
+      process.removeListener('SIGTERM', sigtermHandler);
+    }
+
+    expect(loadConfig).toHaveBeenCalled();
+    expect(buildServer).toHaveBeenCalledWith({ listenHost: '127.0.0.1', listenPort: 1234 });
+    expect(server.listen).toHaveBeenCalledWith({ host: '127.0.0.1', port: 1234 });
+    expect(exitSpy).not.toHaveBeenCalled();
+
+    exitSpy.mockRestore();
+    onSpy.mockRestore();
+    vi.resetModules();
+    vi.unmock('../src/config');
+    vi.unmock('../src/server');
+  });
 });

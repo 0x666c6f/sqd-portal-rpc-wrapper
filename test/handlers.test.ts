@@ -16,16 +16,37 @@ const portal = {
   buildDatasetBaseUrl: (dataset: string) => `https://portal/${dataset}`
 };
 
+const sampleBlock = {
+  header: {
+    number: 5,
+    hash: '0xblock',
+    parentHash: '0xparent',
+    timestamp: 1,
+    miner: '0xminer',
+    gasUsed: '0x1',
+    gasLimit: '0x2',
+    nonce: '0x3',
+    difficulty: '0x4',
+    totalDifficulty: '0x5',
+    size: '0x6',
+    stateRoot: '0xstate',
+    transactionsRoot: '0xtx',
+    receiptsRoot: '0xrec',
+    logsBloom: '0xlog',
+    extraData: '0xextra',
+    mixHash: '0xmix',
+    sha3Uncles: '0xuncle'
+  },
+  transactions: [
+    { transactionIndex: 0, hash: '0xtx', from: '0xfrom', to: '0xto', value: '0x1', input: '0x', nonce: '0x1', gas: '0x2', type: '0x0' }
+  ],
+  logs: [{ logIndex: 0, transactionIndex: 0, transactionHash: '0xtx', address: '0xaddr', data: '0xdata', topics: ['0xtopic'] }],
+  traces: [{ transactionIndex: 0, traceAddress: [], type: 'call', subtraces: 0, action: {}, callFrom: '0xfrom', callTo: '0xto', callValue: '0x1', callGas: '0x2' }]
+};
+
 const portalWithData = {
   fetchHead: async () => ({ head: { number: 5, hash: '0xabc' }, finalizedAvailable: false }),
-  streamBlocks: async () => [
-    {
-      header: { number: 5, hash: '0xblock', parentHash: '0xparent', timestamp: 1, miner: '0xminer', gasUsed: '0x1', gasLimit: '0x2', nonce: '0x3', difficulty: '0x4', totalDifficulty: '0x5', size: '0x6', stateRoot: '0xstate', transactionsRoot: '0xtx', receiptsRoot: '0xrec', logsBloom: '0xlog', extraData: '0xextra', mixHash: '0xmix', sha3Uncles: '0xuncle' },
-      transactions: [{ transactionIndex: 0, hash: '0xtx', from: '0xfrom', to: '0xto', value: '0x1', input: '0x', nonce: '0x1', gas: '0x2', type: '0x0' }],
-      logs: [{ logIndex: 0, transactionIndex: 0, transactionHash: '0xtx', address: '0xaddr', data: '0xdata', topics: ['0xtopic'] }],
-      traces: [{ transactionIndex: 0, traceAddress: [], type: 'call', subtraces: 0, action: {}, callFrom: '0xfrom', callTo: '0xto', callValue: '0x1', callGas: '0x2' }]
-    }
-  ],
+  streamBlocks: async () => [sampleBlock],
   getMetadata: async () => ({ dataset: 'ethereum-mainnet', start_block: 0, real_time: true }),
   buildDatasetBaseUrl: (dataset: string) => `https://portal/${dataset}`
 };
@@ -95,6 +116,23 @@ describe('handlers', () => {
     expect(Array.isArray(response!.result)).toBe(true);
   });
 
+  it('returns empty logs when block has no logs', async () => {
+    const portalNoLogs = {
+      ...portalWithData,
+      streamBlocks: async () => [
+        {
+          header: sampleBlock.header,
+          transactions: sampleBlock.transactions
+        }
+      ]
+    };
+    const { response } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_getLogs', params: [{ fromBlock: '0x5', toBlock: '0x5' }] },
+      { config, portal: portalNoLogs as any, chainId: 1, requestId: 'test' }
+    );
+    expect(response!.result).toEqual([]);
+  });
+
   it('handles eth_getTransactionByBlockNumberAndIndex', async () => {
     const { response } = await handleJsonRpc(
       { jsonrpc: '2.0', id: 1, method: 'eth_getTransactionByBlockNumberAndIndex', params: ['0x5', '0x0'] },
@@ -124,6 +162,22 @@ describe('handlers', () => {
     const { response } = await handleJsonRpc(
       { jsonrpc: '2.0', id: 1, method: 'eth_getTransactionByBlockNumberAndIndex', params: ['0x5', '0x2'] },
       { config, portal: portalWithData as any, chainId: 1, requestId: 'test' }
+    );
+    expect(response!.result).toBeNull();
+  });
+
+  it('returns null when block has no transactions list', async () => {
+    const portalNoTxList = {
+      ...portalWithData,
+      streamBlocks: async () => [
+        {
+          header: sampleBlock.header
+        }
+      ]
+    };
+    const { response } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_getTransactionByBlockNumberAndIndex', params: ['0x5', '0x0'] },
+      { config, portal: portalNoTxList as any, chainId: 1, requestId: 'test' }
     );
     expect(response!.result).toBeNull();
   });
@@ -178,12 +232,78 @@ describe('handlers', () => {
     expect(response!.result).toEqual([]);
   });
 
+  it('handles trace_block without transactions', async () => {
+    const portalNoTx = {
+      ...portalWithData,
+      streamBlocks: async () => [
+        {
+          header: sampleBlock.header,
+          traces: sampleBlock.traces
+        }
+      ]
+    };
+    const { response } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'trace_block', params: ['0x5'] },
+      { config, portal: portalNoTx as any, chainId: 1, requestId: 'test' }
+    );
+    expect(Array.isArray(response!.result)).toBe(true);
+  });
+
+  it('returns empty traces when block has none', async () => {
+    const portalNoTraces = {
+      ...portalWithData,
+      streamBlocks: async () => [
+        {
+          header: sampleBlock.header,
+          transactions: sampleBlock.transactions
+        }
+      ]
+    };
+    const { response } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'trace_block', params: ['0x5'] },
+      { config, portal: portalNoTraces as any, chainId: 1, requestId: 'test' }
+    );
+    expect(response!.result).toEqual([]);
+  });
+
   it('logs portal conflicts', async () => {
     const logger = { info: vi.fn(), warn: vi.fn() };
     const portalConflict = {
       ...portal,
       streamBlocks: async () => {
         throw conflictError([{ number: 1 }]);
+      }
+    };
+    const { response, httpStatus } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: ['0x1', false] },
+      { config, portal: portalConflict as any, chainId: 1, requestId: 'test', logger }
+    );
+    expect(httpStatus).toBe(409);
+    expect(response!.error?.code).toBe(-32603);
+    expect(logger.warn).toHaveBeenCalled();
+  });
+
+  it('normalizes non-rpc errors', async () => {
+    const portalError = {
+      ...portal,
+      streamBlocks: async () => {
+        throw new Error('boom');
+      }
+    };
+    const { response, httpStatus } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: ['0x1', false] },
+      { config, portal: portalError as any, chainId: 1, requestId: 'test' }
+    );
+    expect(httpStatus).toBe(502);
+    expect(response!.error?.code).toBe(-32603);
+  });
+
+  it('logs conflict without previous blocks array', async () => {
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const portalConflict = {
+      ...portal,
+      streamBlocks: async () => {
+        throw conflictError('oops' as any);
       }
     };
     const { response, httpStatus } = await handleJsonRpc(

@@ -28,6 +28,19 @@ describe('ndjson parser', () => {
     await expect(parseNdjsonStream(stream, { maxLineBytes: 1024, maxBytes: 2048 })).rejects.toThrow('ndjson parse');
   });
 
+  it('reports non-error json parse failures for line', async () => {
+    const original = JSON.parse;
+    JSON.parse = () => {
+      throw 'boom';
+    };
+    try {
+      const stream = Readable.from(['{"header":{"number":1}}\n']);
+      await expect(parseNdjsonStream(stream, { maxLineBytes: 1024, maxBytes: 2048 })).rejects.toThrow('ndjson parse error: boom');
+    } finally {
+      JSON.parse = original;
+    }
+  });
+
   it('parses trailing line without newline', async () => {
     const stream = Readable.from(['{"header":{"number":3}}']);
     const result = await parseNdjsonStream(stream, { maxLineBytes: 1024, maxBytes: 2048 });
@@ -54,5 +67,18 @@ describe('ndjson parser', () => {
   it('rejects invalid trailing json without newline', async () => {
     const stream = Readable.from(['{bad json}']);
     await expect(parseNdjsonStream(stream, { maxLineBytes: 1024, maxBytes: 2048 })).rejects.toThrow('ndjson parse');
+  });
+
+  it('reports non-error json parse failures for trailing line', async () => {
+    const original = JSON.parse;
+    JSON.parse = () => {
+      throw 'boom';
+    };
+    try {
+      const stream = Readable.from(['{"header":{"number":1}}']);
+      await expect(parseNdjsonStream(stream, { maxLineBytes: 1024, maxBytes: 2048 })).rejects.toThrow('ndjson parse error: boom');
+    } finally {
+      JSON.parse = original;
+    }
   });
 });
