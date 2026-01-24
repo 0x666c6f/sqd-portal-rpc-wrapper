@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hexToBytes, validateHexBytesLength } from '../src/util/hex';
+import { hexToBytes, isHexString, normalizeHex, validateHexBytesLength } from '../src/util/hex';
 
 describe('hex utils', () => {
   it('parses hex to bytes', () => {
@@ -19,5 +19,14 @@ describe('hex utils', () => {
 
   it('rejects empty hex', () => {
     expect(() => validateHexBytesLength('address', '', 20)).toThrow('invalid address: empty');
+  });
+
+  it('normalizes hex casing', () => {
+    expect(normalizeHex('0xAaBb')).toBe('0xaabb');
+  });
+
+  it('validates hex string format', () => {
+    expect(isHexString('0xabc')).toBe(true);
+    expect(isHexString('abc')).toBe(false);
   });
 });

@@ -5,7 +5,9 @@ import {
   pendingBlockError,
   blockHashFilterError,
   invalidRequest,
-  parseError
+  parseError,
+  normalizeError,
+  RpcError
 } from '../src/errors';
 
 describe('errors', () => {
@@ -38,5 +40,15 @@ describe('errors', () => {
   it('builds parse error', () => {
     const err = parseError();
     expect(err.code).toBe(-32700);
+  });
+
+  it('preserves rpc error in normalizeError', () => {
+    const err = new RpcError({ message: 'oops', code: -32000, httpStatus: 500, category: 'server_error' });
+    expect(normalizeError(err)).toBe(err);
+  });
+
+  it('normalizes non-error input', () => {
+    const err = normalizeError('nope');
+    expect(err.code).toBe(-32603);
   });
 });

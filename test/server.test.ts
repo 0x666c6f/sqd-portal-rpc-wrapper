@@ -16,6 +16,31 @@ describe('server', () => {
     await server.close();
   });
 
+  it('handles readyz', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const server = await buildServer(config);
+    const res = await server.inject({ method: 'GET', url: '/readyz' });
+    expect(res.statusCode).toBe(200);
+    await server.close();
+  });
+
+  it('handles metrics', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const server = await buildServer(config);
+    const res = await server.inject({ method: 'GET', url: '/metrics' });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toContain('text/plain');
+    await server.close();
+  });
+
   it('handles eth_chainId', async () => {
     const config = loadConfig({
       SERVICE_MODE: 'single',

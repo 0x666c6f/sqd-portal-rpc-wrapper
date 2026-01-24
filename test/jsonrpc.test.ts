@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parseJsonRpcPayload } from '../src/jsonrpc';
+import { errorResponse, parseJsonRpcPayload, responseId, successResponse } from '../src/jsonrpc';
+import { RpcError } from '../src/errors';
 
 describe('jsonrpc', () => {
   it('parses single payload', () => {
@@ -30,5 +31,27 @@ describe('jsonrpc', () => {
         { not: 'rpc' } as any
       ])
     ).toThrow('invalid request');
+  });
+
+  it('builds success response', () => {
+    const res = successResponse(1, 'ok');
+    expect(res.result).toBe('ok');
+  });
+
+  it('builds error response with data', () => {
+    const err = new RpcError({
+      message: 'bad',
+      code: -32000,
+      httpStatus: 500,
+      category: 'server_error',
+      data: { hint: 'nope' }
+    });
+    const res = errorResponse(1, err);
+    expect(res.error?.data).toEqual({ hint: 'nope' });
+  });
+
+  it('handles missing id', () => {
+    const res = responseId({ jsonrpc: '2.0', method: 'eth_chainId', params: [] });
+    expect(res).toBeNull();
   });
 });

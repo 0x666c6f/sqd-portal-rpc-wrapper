@@ -18,9 +18,11 @@ const TX_SCAN_LIMIT = Number.parseInt(process.env.LIVE_TX_SCAN_LIMIT || '50', 10
 const FALLBACK_BLOCK_NUMBER = Number.parseInt(process.env.LIVE_FALLBACK_BLOCK_NUMBER || '30000000', 10);
 
 let wrapperUrl = '';
+let wrapperRootUrl = '';
 let server: Awaited<ReturnType<typeof buildServer>> | null = null;
 let targetBlock = 0;
 let txIndex = 0;
+let txCount = 0;
 let matchedBlocks: { base: Record<string, unknown>; wrapper: Record<string, unknown> } | null = null;
 
 describeLive('live rpc parity', () => {
@@ -34,6 +36,7 @@ describeLive('live rpc parity', () => {
     const address = await server.listen({ host: '127.0.0.1', port: 0 });
     const baseUrl =
       typeof address === 'string' ? address : `http://127.0.0.1:${(address as { port: number }).port}`;
+    wrapperRootUrl = baseUrl;
     wrapperUrl = `${baseUrl}/v1/evm/${CHAIN_ID}`;
 
     const baseChainId = parseHexQuantity(await rpcResult(BASE_RPC_URL, 'eth_chainId', []));
@@ -65,6 +68,7 @@ describeLive('live rpc parity', () => {
         targetBlock = match.blockNumber;
         txIndex = match.txIndex;
         matchedBlocks = { base: match.baseBlock, wrapper: match.wrapperBlock };
+        updateTxCount();
         return;
       }
 
@@ -72,6 +76,7 @@ describeLive('live rpc parity', () => {
       const fallbackMatch = await findMatchingTxIndexForBlock(BASE_RPC_URL, wrapperUrl, targetBlock);
       txIndex = fallbackMatch.txIndex;
       matchedBlocks = { base: fallbackMatch.baseBlock, wrapper: fallbackMatch.wrapperBlock };
+      updateTxCount();
       return;
     }
 
@@ -79,6 +84,7 @@ describeLive('live rpc parity', () => {
     const match = await findMatchingTxIndexForBlock(BASE_RPC_URL, wrapperUrl, targetBlock);
     txIndex = match.txIndex;
     matchedBlocks = { base: match.baseBlock, wrapper: match.wrapperBlock };
+    updateTxCount();
   }, HOOK_TIMEOUT_MS);
 
   afterAll(async () => {
@@ -94,9 +100,21 @@ describeLive('live rpc parity', () => {
     expect(wrapper).toEqual(base);
   }, TEST_TIMEOUT_MS);
 
+  it('eth_chainId via header path', async () => {
+    const base = await rpcResult(BASE_RPC_URL, 'eth_chainId', []);
+    const wrapper = await rpcResultWithHeaders(wrapperRootUrl, 'eth_chainId', [], { 'x-chain-id': `${CHAIN_ID}` });
+    expect(wrapper).toEqual(base);
+  }, TEST_TIMEOUT_MS);
+
   it('eth_blockNumber', async () => {
     const base = parseHexQuantity(await rpcResult(BASE_RPC_URL, 'eth_blockNumber', []));
     const wrapper = parseHexQuantity(await rpcResult(wrapperUrl, 'eth_blockNumber', []));
+    expect(Math.abs(base - wrapper)).toBeLessThanOrEqual(BLOCK_NUMBER_TOLERANCE);
+  }, TEST_TIMEOUT_MS);
+
+  it('eth_blockNumber via header path', async () => {
+    const base = parseHexQuantity(await rpcResult(BASE_RPC_URL, 'eth_blockNumber', []));
+    const wrapper = parseHexQuantity(await rpcResultWithHeaders(wrapperRootUrl, 'eth_blockNumber', [], { 'x-chain-id': `${CHAIN_ID}` }));
     expect(Math.abs(base - wrapper)).toBeLessThanOrEqual(BLOCK_NUMBER_TOLERANCE);
   }, TEST_TIMEOUT_MS);
 
@@ -107,12 +125,30 @@ describeLive('live rpc parity', () => {
     expect(normalizeBlock(wrapper)).toEqual(normalizeBlock(base));
   }, TEST_TIMEOUT_MS);
 
+  it('eth_getBlockByNumber full tx', async () => {
+    const blockHex = toHex(targetBlock);
+    const baseBlock =
+      matchedBlocks?.base ?? (await rpcResult(BASE_RPC_URL, 'eth_getBlockByNumber', [blockHex, true]));
+    const wrapperBlock =
+      matchedBlocks?.wrapper ?? (await rpcResult(wrapperUrl, 'eth_getBlockByNumber', [blockHex, true]));
+    expect(normalizeBlockWithTransactions(wrapperBlock)).toEqual(normalizeBlockWithTransactions(baseBlock));
+  }, TEST_TIMEOUT_MS);
+
   it('eth_getTransactionByBlockNumberAndIndex', async () => {
     const blockHex = toHex(targetBlock);
     const txHex = toHex(txIndex);
     const base = await rpcResult(BASE_RPC_URL, 'eth_getTransactionByBlockNumberAndIndex', [blockHex, txHex]);
     const wrapper = await rpcResult(wrapperUrl, 'eth_getTransactionByBlockNumberAndIndex', [blockHex, txHex]);
     expect(normalizeTx(wrapper)).toEqual(normalizeTx(base));
+  }, TEST_TIMEOUT_MS);
+
+  it('eth_getTransactionByBlockNumberAndIndex out of range', async () => {
+    const blockHex = toHex(targetBlock);
+    const index = txCount > 0 ? txCount + 5 : 99999;
+    const txHex = toHex(index);
+    const base = await rpcResult(BASE_RPC_URL, 'eth_getTransactionByBlockNumberAndIndex', [blockHex, txHex]);
+    const wrapper = await rpcResult(wrapperUrl, 'eth_getTransactionByBlockNumberAndIndex', [blockHex, txHex]);
+    expect(wrapper).toEqual(base);
   }, TEST_TIMEOUT_MS);
 
   it('eth_getLogs', async () => {
@@ -131,19 +167,41 @@ describeLive('live rpc parity', () => {
     const normalizedWrapper = normalizeLogs(wrapper);
     expect(normalizedWrapper).toEqual(normalizedBase);
   }, TEST_TIMEOUT_MS);
+
+  it('eth_getLogs with address + topic0', async () => {
+    const blockHex = toHex(targetBlock);
+    const baseLogs = await rpcResult(BASE_RPC_URL, 'eth_getLogs', [{ fromBlock: blockHex, toBlock: blockHex }]);
+    if (!Array.isArray(baseLogs) || baseLogs.length === 0) {
+      return;
+    }
+    const sample = baseLogs[0] as { address?: string; topics?: string[] };
+    if (!sample.address) {
+      return;
+    }
+    const filter: Record<string, unknown> = {
+      fromBlock: blockHex,
+      toBlock: blockHex,
+      address: sample.address,
+      topics: sample.topics && sample.topics.length > 0 ? [sample.topics[0]] : undefined
+    };
+    const base = await rpcResult(BASE_RPC_URL, 'eth_getLogs', [filter]);
+    const wrapper = await rpcResult(wrapperUrl, 'eth_getLogs', [filter]);
+    expect(normalizeLogs(wrapper)).toEqual(normalizeLogs(base));
+  }, TEST_TIMEOUT_MS);
 });
 
 async function jsonRpcCall(
   url: string,
   method: string,
-  params: unknown[]
+  params: unknown[],
+  headers?: Record<string, string>
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS);
   try {
     const res = await fetch(url, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...(headers ?? {}) },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
       signal: controller.signal
     });
@@ -157,6 +215,18 @@ async function jsonRpcCall(
 
 async function rpcResult(url: string, method: string, params: unknown[]) {
   const { status, body } = await jsonRpcCall(url, method, params);
+  if (status >= 400) {
+    throw new Error(`rpc http ${status} for ${method}`);
+  }
+  if (body.error) {
+    const err = body.error as { code?: number; message?: string };
+    throw new Error(`rpc error ${err.code ?? 'unknown'} for ${method}: ${err.message ?? 'unknown'}`);
+  }
+  return body.result;
+}
+
+async function rpcResultWithHeaders(url: string, method: string, params: unknown[], headers: Record<string, string>) {
+  const { status, body } = await jsonRpcCall(url, method, params, headers);
   if (status >= 400) {
     throw new Error(`rpc http ${status} for ${method}`);
   }
@@ -316,6 +386,18 @@ function normalizeBlock(block: unknown): Record<string, unknown> | null {
   };
 }
 
+function normalizeBlockWithTransactions(block: unknown): Record<string, unknown> | null {
+  if (!block || typeof block !== 'object') {
+    return null;
+  }
+  const b = block as Record<string, unknown>;
+  const txs = Array.isArray(b.transactions) ? b.transactions : [];
+  return {
+    ...normalizeBlock(b),
+    transactions: txs.map((tx) => normalizeTx(tx))
+  };
+}
+
 function normalizeTx(tx: unknown): Record<string, unknown> | null {
   if (!tx || typeof tx !== 'object') {
     return null;
@@ -382,6 +464,12 @@ function normalizeLog(log: unknown): Record<string, unknown> {
 
 function jsonEqual(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function updateTxCount() {
+  if (matchedBlocks?.base && Array.isArray((matchedBlocks.base as { transactions?: unknown[] }).transactions)) {
+    txCount = (matchedBlocks.base as { transactions?: unknown[] }).transactions?.length ?? 0;
+  }
 }
 
 async function safeRpcResult(url: string, method: string, params: unknown[], retries = 0): Promise<unknown | null> {

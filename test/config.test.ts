@@ -44,6 +44,15 @@ describe('config', () => {
     ).toThrow('PORTAL_DATASET_MAP');
   });
 
+  it('filters empty dataset map entries', () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET_MAP: '{"1":"","2":"ethereum-mainnet"}',
+      PORTAL_CHAIN_ID: '2'
+    });
+    expect(cfg.portalDatasetMap).toEqual({ '2': 'ethereum-mainnet' });
+  });
+
   it('requires chain id when dataset map has multiple entries', () => {
     expect(() =>
       loadConfig({
@@ -64,6 +73,16 @@ describe('config', () => {
         PORTAL_DATASET: 'ethereum-mainnet',
         PORTAL_CHAIN_ID: '1',
         MAX_LOG_BLOCK_RANGE: 'nope'
+      })
+    ).toThrow('invalid number');
+  });
+
+  it('rejects invalid chain id env', () => {
+    expect(() =>
+      loadConfig({
+        SERVICE_MODE: 'single',
+        PORTAL_DATASET: 'ethereum-mainnet',
+        PORTAL_CHAIN_ID: 'nope'
       })
     ).toThrow('invalid number');
   });
