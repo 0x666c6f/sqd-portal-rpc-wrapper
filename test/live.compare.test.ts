@@ -24,6 +24,8 @@ let wrapperEndpoints: { label: string; url: string; headers?: Record<string, str
 let targetBlock = 0;
 let txIndex = 0;
 let txCount = 0;
+let blockHash = '';
+let txHash = '';
 let matchedBlocks: { base: Record<string, unknown>; wrapper: Record<string, unknown> } | null = null;
 let lastRpcError: string | null = null;
 
@@ -32,7 +34,8 @@ describeLive('live rpc parity', () => {
     process.env.LOG_LEVEL = 'error';
     const config = loadConfig({
       SERVICE_MODE: 'multi',
-      PORTAL_BASE_URL: PORTAL_BASE_URL
+      PORTAL_BASE_URL: PORTAL_BASE_URL,
+      UPSTREAM_RPC_URL: BASE_RPC_URL
     });
     server = await buildServer(config);
     const address = await server.listen({ host: '127.0.0.1', port: 0 });
@@ -55,6 +58,14 @@ describeLive('live rpc parity', () => {
     if (envBlock && envTxIndex) {
       targetBlock = parseHexQuantity(envBlock);
       txIndex = parseHexQuantity(envTxIndex);
+      const blockHex = toHex(targetBlock);
+      const [baseBlock, wrapperBlock] = await Promise.all([
+        rpcResult(BASE_RPC_URL, 'eth_getBlockByNumber', [blockHex, true]),
+        rpcResult(wrapperUrl, 'eth_getBlockByNumber', [blockHex, true])
+      ]);
+      matchedBlocks = { base: baseBlock as Record<string, unknown>, wrapper: wrapperBlock as Record<string, unknown> };
+      updateTxCount();
+      updateTxContext();
       return;
     }
 
@@ -75,6 +86,7 @@ describeLive('live rpc parity', () => {
         txIndex = match.txIndex;
         matchedBlocks = { base: match.baseBlock, wrapper: match.wrapperBlock };
         updateTxCount();
+        updateTxContext();
         return;
       }
 
@@ -83,6 +95,7 @@ describeLive('live rpc parity', () => {
       txIndex = fallbackMatch.txIndex;
       matchedBlocks = { base: fallbackMatch.baseBlock, wrapper: fallbackMatch.wrapperBlock };
       updateTxCount();
+      updateTxContext();
       return;
     }
 
@@ -91,6 +104,7 @@ describeLive('live rpc parity', () => {
     txIndex = match.txIndex;
     matchedBlocks = { base: match.baseBlock, wrapper: match.wrapperBlock };
     updateTxCount();
+    updateTxContext();
   }, HOOK_TIMEOUT_MS);
 
   afterAll(async () => {
@@ -136,6 +150,17 @@ describeLive('live rpc parity', () => {
     }
   }, TEST_TIMEOUT_MS);
 
+  it('eth_getBlockByHash', async () => {
+    if (!blockHash) {
+      throw new Error('missing block hash for live tests');
+    }
+    const base = await rpcResult(BASE_RPC_URL, 'eth_getBlockByHash', [blockHash, false]);
+    for (const endpoint of wrapperEndpoints) {
+      const wrapper = await wrapperResult(endpoint, 'eth_getBlockByHash', [blockHash, false]);
+      expect(normalizeBlock(wrapper)).toEqual(normalizeBlock(base));
+    }
+  }, TEST_TIMEOUT_MS);
+
   it('eth_getTransactionByBlockNumberAndIndex', async () => {
     const blockHex = toHex(targetBlock);
     const txHex = toHex(txIndex);
@@ -143,6 +168,28 @@ describeLive('live rpc parity', () => {
     for (const endpoint of wrapperEndpoints) {
       const wrapper = await wrapperResult(endpoint, 'eth_getTransactionByBlockNumberAndIndex', [blockHex, txHex]);
       expect(normalizeTx(wrapper)).toEqual(normalizeTx(base));
+    }
+  }, TEST_TIMEOUT_MS);
+
+  it('eth_getTransactionByHash', async () => {
+    if (!txHash) {
+      throw new Error('missing tx hash for live tests');
+    }
+    const base = await rpcResult(BASE_RPC_URL, 'eth_getTransactionByHash', [txHash]);
+    for (const endpoint of wrapperEndpoints) {
+      const wrapper = await wrapperResult(endpoint, 'eth_getTransactionByHash', [txHash]);
+      expect(normalizeTx(wrapper)).toEqual(normalizeTx(base));
+    }
+  }, TEST_TIMEOUT_MS);
+
+  it('eth_getTransactionReceipt', async () => {
+    if (!txHash) {
+      throw new Error('missing tx hash for live tests');
+    }
+    const base = await rpcResult(BASE_RPC_URL, 'eth_getTransactionReceipt', [txHash]);
+    for (const endpoint of wrapperEndpoints) {
+      const wrapper = await wrapperResult(endpoint, 'eth_getTransactionReceipt', [txHash]);
+      expect(normalizeReceipt(wrapper)).toEqual(normalizeReceipt(base));
     }
   }, TEST_TIMEOUT_MS);
 
@@ -495,6 +542,29 @@ function normalizeLog(log: unknown): Record<string, unknown> {
   };
 }
 
+function normalizeReceipt(receipt: unknown): Record<string, unknown> | null {
+  if (!receipt || typeof receipt !== 'object') {
+    return null;
+  }
+  const r = receipt as Record<string, unknown>;
+  return {
+    blockHash: r.blockHash,
+    blockNumber: r.blockNumber,
+    transactionHash: r.transactionHash,
+    transactionIndex: r.transactionIndex,
+    from: r.from,
+    to: r.to ?? null,
+    contractAddress: r.contractAddress ?? null,
+    cumulativeGasUsed: r.cumulativeGasUsed,
+    gasUsed: r.gasUsed,
+    effectiveGasPrice: r.effectiveGasPrice,
+    logsBloom: r.logsBloom,
+    status: r.status,
+    type: r.type,
+    logs: Array.isArray(r.logs) ? r.logs.map((log) => normalizeLog(log)) : []
+  };
+}
+
 function jsonEqual(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
@@ -503,6 +573,31 @@ function updateTxCount() {
   if (matchedBlocks?.base && Array.isArray((matchedBlocks.base as { transactions?: unknown[] }).transactions)) {
     txCount = (matchedBlocks.base as { transactions?: unknown[] }).transactions?.length ?? 0;
   }
+}
+
+function updateTxContext() {
+  if (!matchedBlocks?.base) {
+    return;
+  }
+  const baseBlock = matchedBlocks.base as { hash?: unknown; transactions?: unknown[] };
+  blockHash = typeof baseBlock.hash === 'string' ? baseBlock.hash : '';
+  const txs = Array.isArray(baseBlock.transactions) ? baseBlock.transactions : [];
+  const candidate = txs[txIndex];
+  if (candidate && typeof candidate === 'object' && typeof (candidate as { hash?: unknown }).hash === 'string') {
+    txHash = (candidate as { hash: string }).hash;
+    return;
+  }
+  for (const tx of txs) {
+    if (!tx || typeof tx !== 'object') continue;
+    const txIndexValue = extractTxIndex(tx, -1);
+    if (txIndexValue !== txIndex) continue;
+    const hash = (tx as { hash?: unknown }).hash;
+    if (typeof hash === 'string') {
+      txHash = hash;
+      return;
+    }
+  }
+  txHash = '';
 }
 
 async function safeRpcResult(url: string, method: string, params: unknown[], retries = 0): Promise<unknown | null> {

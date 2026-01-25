@@ -392,6 +392,19 @@ describe('PortalClient', () => {
     ).rejects.toThrow('response body unavailable');
   });
 
+  it('includes json parse error context', async () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const fetchImpl = async () => new Response('not json', { status: 400 });
+    const client = new PortalClient(cfg, { fetchImpl });
+    await expect(
+      client.streamBlocks('https://portal.sqd.dev/datasets/ethereum-mainnet', false, { type: 'evm', fromBlock: 1, toBlock: 1 })
+    ).rejects.toThrow('json parse error');
+  });
+
   it('uses fallback text when response body empty', async () => {
     const cfg = loadConfig({
       SERVICE_MODE: 'single',
@@ -601,23 +614,6 @@ describe('PortalClient', () => {
     expect(warn).toHaveBeenCalled();
   });
 
-  it('returns default metadata in test env without fetch', async () => {
-    const prevEnv = process.env.NODE_ENV;
-    process.env.NODE_ENV = 'test';
-    const cfg = loadConfig({
-      SERVICE_MODE: 'single',
-      PORTAL_DATASET: 'ethereum-mainnet',
-      PORTAL_CHAIN_ID: '1'
-    });
-    const client = new PortalClient(cfg);
-    const result = await client.getMetadata('https://portal.sqd.dev/datasets/ethereum-mainnet');
-    expect(result.start_block).toBe(0);
-    expect(result.real_time).toBe(false);
-    const unknown = await client.getMetadata('https://portal.sqd.dev/datasets/');
-    expect(unknown.dataset).toBe('unknown');
-    process.env.NODE_ENV = prevEnv;
-  });
-
   it('uses cached metadata when refresh throws non-error', async () => {
     const cfg = loadConfig({
       SERVICE_MODE: 'single',
@@ -655,5 +651,48 @@ describe('PortalClient', () => {
     };
     const client = new PortalClient(cfg, { fetchImpl });
     await expect(client.getMetadata('https://portal.sqd.dev/datasets/ethereum-mainnet')).rejects.toThrow('server error');
+  });
+
+  it('opens circuit after threshold and short-circuits requests', async () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1',
+      PORTAL_CIRCUIT_BREAKER_THRESHOLD: '2',
+      PORTAL_CIRCUIT_BREAKER_RESET_MS: '10000'
+    });
+    const fetchImpl = vi.fn().mockResolvedValue(new Response('boom', { status: 500 }));
+    const client = new PortalClient(cfg, { fetchImpl, logger: { info: vi.fn(), warn: vi.fn() } });
+    await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false, '')).rejects.toThrow('server error');
+    await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false, '')).rejects.toThrow('server error');
+    await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false, '')).rejects.toThrow(
+      'portal circuit open'
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('closes circuit after reset window', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2024-01-01T00:00:00Z'));
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1',
+      PORTAL_CIRCUIT_BREAKER_THRESHOLD: '1',
+      PORTAL_CIRCUIT_BREAKER_RESET_MS: '1'
+    });
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('boom', { status: 500 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ number: 1, hash: '0xabc' }), { status: 200 }));
+    const client = new PortalClient(cfg, { fetchImpl, logger: { info: vi.fn(), warn: vi.fn() } });
+    await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false, '')).rejects.toThrow('server error');
+    await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false, '')).rejects.toThrow(
+      'portal circuit open'
+    );
+    await vi.advanceTimersByTimeAsync(2);
+    const result = await client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false, '');
+    expect(result.head.number).toBe(1);
+    vi.useRealTimers();
   });
 });

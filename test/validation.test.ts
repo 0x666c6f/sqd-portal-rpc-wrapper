@@ -118,9 +118,10 @@ describe('validation', () => {
 
   it('rejects too many addresses', async () => {
     const addresses = Array.from({ length: 1001 }, () => '0x' + '11'.repeat(20));
-    await expect(
-      parseLogFilter(portal as any, 'https://portal', { address: addresses }, config)
-    ).rejects.toThrow('specify less number of address');
+    await expect(parseLogFilter(portal as any, 'https://portal', { address: addresses }, config)).rejects.toMatchObject({
+      message: 'specify less number of address',
+      code: -32012
+    });
   });
 
   it('parses topic filters', async () => {

@@ -1,6 +1,6 @@
 import fastify, { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { gunzip } from 'node:zlib';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { Config } from './config';
 import { metrics, metricsPayload } from './metrics';
@@ -107,13 +107,21 @@ export async function buildServer(config: Config): Promise<FastifyInstance> {
   await prefetchMetadata(server, portal, config);
 
   server.get('/healthz', async () => ({ status: 'ok' }));
-  server.get('/readyz', async () => ({ status: 'ready' }));
+  server.get('/readyz', async (req, reply) => {
+    try {
+      await checkPortalReady(config, portal);
+      reply.send({ status: 'ready' });
+    } catch (err) {
+      req.log.warn({ error: String(err) }, 'portal readiness check failed');
+      reply.code(503).send({ status: 'unready' });
+    }
+  });
   server.get('/metrics', async (_req, reply) => {
     const payload = await metricsPayload();
     reply.type('text/plain; version=0.0.4').send(payload);
   });
-  server.get('/capabilities', async (_req, reply) => {
-    const payload = await buildCapabilities(config, portal);
+  server.get('/capabilities', async (req, reply) => {
+    const payload = await buildCapabilities(config, portal, req.log);
     reply.send(payload);
   });
 
@@ -169,7 +177,7 @@ async function handleRpcRequest(
     if (config.wrapperApiKey) {
       const header = config.wrapperApiKeyHeader.toLowerCase();
       const provided = normalizeHeaderValue(req.headers[header] || req.headers[header.toLowerCase()]);
-      if (!provided || provided !== config.wrapperApiKey) {
+      if (!provided || !timingSafeCompare(provided, config.wrapperApiKey)) {
         const err = unauthorizedError();
         metrics.errors_total.labels(err.category).inc();
         return reply.code(err.httpStatus).send({
@@ -184,6 +192,8 @@ async function handleRpcRequest(
     const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : randomUUID();
     const payload = req.body;
     const parsed = parseJsonRpcPayload(payload);
+    const requestCache = new Map<string, Promise<unknown>>();
+    const startBlockCache = new Map<string, Promise<number | undefined>>();
     const portalHeaders: PortalStreamHeaders = {};
     const recordPortalHeaders = (headers: PortalStreamHeaders) => {
       if (headers.finalizedHeadNumber && !portalHeaders.finalizedHeadNumber) {
@@ -215,7 +225,10 @@ async function handleRpcRequest(
         requestId,
         logger: req.log,
         recordPortalHeaders,
-        upstream
+        upstream,
+        requestCache,
+        requestTimeoutMs: config.handlerTimeoutMs,
+        startBlockCache
       });
       if (hasId) {
         responses.push(response);
@@ -349,20 +362,36 @@ function toCategory(code: number): string {
   }
 }
 
+function timingSafeCompare(left: string, right: string): boolean {
+  const leftBuf = Buffer.from(left);
+  const rightBuf = Buffer.from(right);
+  const len = Math.max(leftBuf.length, rightBuf.length);
+  const leftPadded = Buffer.alloc(len);
+  const rightPadded = Buffer.alloc(len);
+  leftBuf.copy(leftPadded);
+  rightBuf.copy(rightPadded);
+  return timingSafeEqual(leftPadded, rightPadded) && leftBuf.length === rightBuf.length;
+}
+
 export const __test__ = {
   extractChainId,
   extractSingleChainIdFromMap,
   normalizeHeaderValue,
-  classifyGunzipError
+  classifyGunzipError,
+  timingSafeCompare
 };
 
 const JSON_RPC_METHODS = [
   'eth_chainId',
   'eth_blockNumber',
   'eth_getBlockByNumber',
+  'eth_getBlockByHash',
+  'eth_getTransactionByHash',
+  'eth_getTransactionReceipt',
   'eth_getTransactionByBlockNumberAndIndex',
   'eth_getLogs',
-  'trace_block'
+  'trace_block',
+  'trace_transaction'
 ];
 
 async function prefetchMetadata(server: FastifyInstance, portal: PortalClient, config: Config) {
@@ -389,7 +418,25 @@ async function prefetchMetadata(server: FastifyInstance, portal: PortalClient, c
   );
 }
 
-async function buildCapabilities(config: Config, portal: PortalClient) {
+async function checkPortalReady(config: Config, portal: PortalClient) {
+  const chainDatasets = resolveChainDatasets(config);
+  const entries = Object.entries(chainDatasets);
+  if (entries.length === 0) {
+    throw new Error('no datasets configured');
+  }
+  await Promise.all(
+    entries.map(async ([_chainId, dataset]) => {
+      const baseUrl = portal.buildDatasetBaseUrl(dataset);
+      await portal.fetchHead(baseUrl, false, '');
+    })
+  );
+}
+
+async function buildCapabilities(
+  config: Config,
+  portal: PortalClient,
+  logger: { warn: (obj: Record<string, unknown>, msg: string) => void }
+) {
   const chainDatasets = resolveChainDatasets(config);
   const chains: Record<string, { dataset: string; aliases: string[]; startBlock?: number; realTime: boolean }> = {};
   for (const [chainId, dataset] of Object.entries(chainDatasets)) {
@@ -403,7 +450,11 @@ async function buildCapabilities(config: Config, portal: PortalClient) {
       startBlock = typeof metadata.start_block === 'number' ? metadata.start_block : undefined;
       realTime = resolveRealtimeEnabled(metadata, config.portalRealtimeMode);
       metrics.portal_realtime_enabled.labels(chainId).set(Number(realTime));
-    } catch {
+    } catch (err) {
+      logger.warn(
+        { chainId: Number(chainId), dataset, error: String(err) },
+        'portal metadata fetch failed'
+      );
       realTime = resolveRealtimeEnabled(null, config.portalRealtimeMode);
       metrics.portal_realtime_enabled.labels(chainId).set(Number(realTime));
     }

@@ -7,6 +7,7 @@ Status: Draft
 - EVM JSON-RPC wrapper over SQD Portal
 - Supported methods only
 - No realtime proxy endpoints
+- Optional upstream proxy for hash-based methods when configured
 
 ## Goals
 - JSON-RPC compatibility for supported methods
@@ -116,6 +117,18 @@ ASCII flow:
 - start_block gate: return null if below start
 - Stream single block, convert
 
+### eth_getBlockByHash
+- Validate hash + fullTx boolean
+- Proxy upstream when configured
+
+### eth_getTransactionByHash
+- Validate hash
+- Proxy upstream when configured
+
+### eth_getTransactionReceipt
+- Validate hash
+- Proxy upstream when configured
+
 ### eth_getTransactionByBlockNumberAndIndex
 - Parse block tag + tx index
 - start_block gate: return null if below start
@@ -133,6 +146,10 @@ ASCII flow:
 - Reject/Proxy pending + blockHash param
 - start_block gate: empty array
 - Stream block -> traces -> convert
+
+### trace_transaction
+- Validate hash
+- Proxy upstream when configured
 
 ## Error Handling
 - JSON parse error => -32700

@@ -13,6 +13,8 @@
 - `PORTAL_API_KEY_HEADER`: header name, default `X-API-Key`
 - `PORTAL_REALTIME_MODE`: `auto|required|disabled`, default `auto`
 - `PORTAL_METADATA_TTL_MS`: metadata cache TTL, default `300000`
+- `PORTAL_CIRCUIT_BREAKER_THRESHOLD`: open circuit after N failures (0 disables), default `0`
+- `PORTAL_CIRCUIT_BREAKER_RESET_MS`: circuit reset window, default `30000`
 
 ## Limits
 - `MAX_LOG_BLOCK_RANGE`: default `1000000`
@@ -23,6 +25,7 @@
 - `MAX_NDJSON_LINE_BYTES`: default `8388608`
 - `MAX_NDJSON_BYTES`: default `67108864`
 - `MAX_REQUEST_BODY_BYTES`: default `8388608`
+- `HANDLER_TIMEOUT_MS`: per-request handler timeout (or `REQUEST_TIMEOUT_MS`), default `60000`
 
 ## Incoming Auth
 - `WRAPPER_API_KEY`: require incoming header

@@ -69,6 +69,7 @@ export class UpstreamRpcClient {
         const code = typeof error.code === 'number' ? error.code : -32603;
         const message = typeof error.message === 'string' ? error.message : 'server error';
         const data = error.data && typeof error.data === 'object' ? (error.data as Record<string, unknown>) : undefined;
+        this.logger?.warn?.({ endpoint: url, code, message }, 'upstream rpc error response');
         throw rpcErrorFromUpstream(code, message, data);
       }
       if (!('result' in response)) {

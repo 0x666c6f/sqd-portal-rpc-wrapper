@@ -22,6 +22,8 @@ describe('config', () => {
     });
     expect(cfg.serviceMode).toBe('single');
     expect(cfg.portalDataset).toBe('ethereum-mainnet');
+    expect(cfg.handlerTimeoutMs).toBeGreaterThan(0);
+    expect(cfg.portalCircuitBreakerThreshold).toBe(0);
   });
 
   it('rejects invalid service mode', () => {
@@ -90,6 +92,20 @@ describe('config', () => {
       UPSTREAM_RPC_URL_MAP: '{"1":"https://rpc","2":""}'
     });
     expect(cfg.upstreamRpcUrlMap).toEqual({ '1': 'https://rpc' });
+  });
+
+  it('parses handler timeout and circuit breaker settings', () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1',
+      HANDLER_TIMEOUT_MS: '1234',
+      PORTAL_CIRCUIT_BREAKER_THRESHOLD: '2',
+      PORTAL_CIRCUIT_BREAKER_RESET_MS: '5000'
+    });
+    expect(cfg.handlerTimeoutMs).toBe(1234);
+    expect(cfg.portalCircuitBreakerThreshold).toBe(2);
+    expect(cfg.portalCircuitBreakerResetMs).toBe(5000);
   });
 
   it('requires chain id when dataset map has multiple entries', () => {

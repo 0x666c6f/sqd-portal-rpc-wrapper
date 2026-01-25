@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { gzipSync } from 'node:zlib';
 import { __test__ as serverTest, buildServer } from '../src/server';
 import { loadConfig } from '../src/config';
@@ -69,10 +69,45 @@ describe('server', () => {
       PORTAL_DATASET: 'ethereum-mainnet',
       PORTAL_CHAIN_ID: '1'
     });
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ number: 1, hash: '0xabc' }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchImpl);
     const server = await buildServer(config);
     const res = await server.inject({ method: 'GET', url: '/readyz' });
     expect(res.statusCode).toBe(200);
     await server.close();
+    vi.unstubAllGlobals();
+  });
+
+  it('returns 503 when readyz portal check fails', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const fetchImpl = vi.fn().mockResolvedValue(new Response('unavailable', { status: 503 }));
+    vi.stubGlobal('fetch', fetchImpl);
+    const server = await buildServer(config);
+    const res = await server.inject({ method: 'GET', url: '/readyz' });
+    expect(res.statusCode).toBe(503);
+    await server.close();
+    vi.unstubAllGlobals();
+  });
+
+  it('returns 503 when no datasets configured', async () => {
+    vi.resetModules();
+    vi.doMock('../src/portal/mapping', async () => {
+      const actual = await vi.importActual<typeof import('../src/portal/mapping')>('../src/portal/mapping');
+      return { ...actual, defaultDatasetMap: () => ({}) };
+    });
+    const { buildServer } = await import('../src/server');
+    const { loadConfig } = await import('../src/config');
+    const config = loadConfig({ SERVICE_MODE: 'multi' });
+    const server = await buildServer(config);
+    const res = await server.inject({ method: 'GET', url: '/readyz' });
+    expect(res.statusCode).toBe(503);
+    await server.close();
+    vi.resetModules();
+    vi.unmock('../src/portal/mapping');
   });
 
   it('handles metrics', async () => {

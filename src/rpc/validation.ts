@@ -52,8 +52,8 @@ function parseBlockNumberValue(value: string | number, config: Config): number {
   let parsed: bigint;
   try {
     parsed = raw.startsWith('0x') ? BigInt(raw) : BigInt(raw);
-  } catch {
-    throw invalidParams('invalid block number');
+  } catch (err) {
+    throw invalidParams('invalid block number', { cause: errorCause(err) });
   }
   if (parsed < 0n || parsed > config.maxBlockNumber) {
     throw invalidParams('invalid block number');
@@ -130,8 +130,8 @@ export async function parseLogFilter(
     }
     try {
       validateHexBytesLength('blockHash', filter.blockHash, 32);
-    } catch {
-      throw invalidParams('invalid blockHash filter');
+    } catch (err) {
+      throw invalidParams('invalid blockHash filter', { cause: errorCause(err) });
     }
     blockHash = filter.blockHash.toLowerCase();
   }
@@ -198,8 +198,8 @@ function buildLogFilter(filter: Record<string, unknown>, config: Config): Parsed
     if (typeof addr === 'string') {
       try {
         validateHexBytesLength('address', addr, ADDRESS_BYTES);
-      } catch {
-        throw invalidParams('invalid address filter');
+      } catch (err) {
+        throw invalidParams('invalid address filter', { cause: errorCause(err) });
       }
       logFilter.address = [addr.toLowerCase()];
     } else if (Array.isArray(addr)) {
@@ -213,8 +213,8 @@ function buildLogFilter(filter: Record<string, unknown>, config: Config): Parsed
         }
         try {
           validateHexBytesLength('address', value, ADDRESS_BYTES);
-        } catch {
-          throw invalidParams('invalid address filter');
+        } catch (err) {
+          throw invalidParams('invalid address filter', { cause: errorCause(err) });
         }
         addrs.push(value.toLowerCase());
       }
@@ -239,8 +239,8 @@ function buildLogFilter(filter: Record<string, unknown>, config: Config): Parsed
       if (typeof topic === 'string') {
         try {
           validateHexBytesLength('topic', topic, TOPIC_BYTES);
-        } catch {
-          throw invalidParams('invalid topic filter');
+        } catch (err) {
+          throw invalidParams('invalid topic filter', { cause: errorCause(err) });
         }
         values.push(topic.toLowerCase());
       } else if (Array.isArray(topic)) {
@@ -250,8 +250,8 @@ function buildLogFilter(filter: Record<string, unknown>, config: Config): Parsed
           }
           try {
             validateHexBytesLength('topic', entry, TOPIC_BYTES);
-          } catch {
-            throw invalidParams('invalid topic filter');
+          } catch (err) {
+            throw invalidParams('invalid topic filter', { cause: errorCause(err) });
           }
           values.push(entry.toLowerCase());
         }
@@ -266,4 +266,8 @@ function buildLogFilter(filter: Record<string, unknown>, config: Config): Parsed
   }
 
   return logFilter;
+}
+
+function errorCause(err: unknown): string {
+  return String(err);
 }

@@ -1,6 +1,7 @@
 import { Readable } from 'node:stream';
 import { metrics } from '../metrics';
 import { serverError } from '../errors';
+import { PortalBlockResponse } from './types';
 
 interface NdjsonLimits {
   maxLineBytes: number;
@@ -10,12 +11,12 @@ interface NdjsonLimits {
 export async function parseNdjsonStream(
   body: ReadableStream<Uint8Array> | NodeJS.ReadableStream,
   limits: NdjsonLimits
-): Promise<any[]> {
+): Promise<PortalBlockResponse[]> {
   const stream = isWebStream(body) ? Readable.fromWeb(body) : body;
   const decoder = new TextDecoder();
   let buffer = '';
   let totalBytes = 0;
-  const blocks: any[] = [];
+  const blocks: PortalBlockResponse[] = [];
 
   for await (const chunk of stream) {
     const chunkBuf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);

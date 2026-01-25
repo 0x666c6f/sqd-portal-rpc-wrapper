@@ -27,6 +27,9 @@ export interface Config {
   maxRequestBodyBytes: number;
   upstreamRpcUrl?: string;
   upstreamRpcUrlMap: Record<string, string>;
+  handlerTimeoutMs: number;
+  portalCircuitBreakerThreshold: number;
+  portalCircuitBreakerResetMs: number;
 }
 
 const DEFAULT_LISTEN = ':8080';
@@ -40,6 +43,9 @@ const DEFAULT_MAX_NDJSON_LINE_BYTES = 8 * 1024 * 1024;
 const DEFAULT_MAX_NDJSON_BYTES = 64 * 1024 * 1024;
 const DEFAULT_MAX_BODY_BYTES = 8 * 1024 * 1024;
 const DEFAULT_PORTAL_METADATA_TTL_MS = 300_000;
+const DEFAULT_HANDLER_TIMEOUT_MS = DEFAULT_HTTP_TIMEOUT_MS;
+const DEFAULT_CIRCUIT_BREAKER_THRESHOLD = 0;
+const DEFAULT_CIRCUIT_BREAKER_RESET_MS = 30_000;
 
 export function loadConfig(env = process.env): Config {
   const serviceMode = (env.SERVICE_MODE || 'single').toLowerCase();
@@ -70,11 +76,20 @@ export function loadConfig(env = process.env): Config {
   const maxNdjsonLineBytes = parseNumber(env.MAX_NDJSON_LINE_BYTES, DEFAULT_MAX_NDJSON_LINE_BYTES);
   const maxNdjsonBytes = parseNumber(env.MAX_NDJSON_BYTES, DEFAULT_MAX_NDJSON_BYTES);
   const maxRequestBodyBytes = parseNumber(env.MAX_REQUEST_BODY_BYTES, DEFAULT_MAX_BODY_BYTES);
+  const handlerTimeoutMs = parseNumber(env.HANDLER_TIMEOUT_MS || env.REQUEST_TIMEOUT_MS, DEFAULT_HANDLER_TIMEOUT_MS);
 
   const wrapperApiKey = env.WRAPPER_API_KEY;
   const wrapperApiKeyHeader = env.WRAPPER_API_KEY_HEADER || 'X-API-Key';
   const upstreamRpcUrl = env.UPSTREAM_RPC_URL;
   const upstreamRpcUrlMap = parseUrlMap(env.UPSTREAM_RPC_URL_MAP);
+  const portalCircuitBreakerThreshold = parseNumber(
+    env.PORTAL_CIRCUIT_BREAKER_THRESHOLD,
+    DEFAULT_CIRCUIT_BREAKER_THRESHOLD
+  );
+  const portalCircuitBreakerResetMs = parseNumber(
+    env.PORTAL_CIRCUIT_BREAKER_RESET_MS,
+    DEFAULT_CIRCUIT_BREAKER_RESET_MS
+  );
 
   if (serviceMode === 'single') {
     if (!portalDataset && Object.keys(portalDatasetMap).length === 0) {
@@ -108,7 +123,10 @@ export function loadConfig(env = process.env): Config {
     maxNdjsonBytes,
     maxRequestBodyBytes,
     upstreamRpcUrl,
-    upstreamRpcUrlMap
+    upstreamRpcUrlMap,
+    handlerTimeoutMs,
+    portalCircuitBreakerThreshold,
+    portalCircuitBreakerResetMs
   };
 }
 

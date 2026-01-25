@@ -89,11 +89,13 @@ describe('upstream rpc', () => {
     const fetchImpl = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: -32602, message: 'invalid params' } }))
     );
-    const client = new UpstreamRpcClient(config, { fetchImpl });
+    const warn = vi.fn();
+    const client = new UpstreamRpcClient(config, { fetchImpl, logger: { info: vi.fn(), warn } });
     await expect(client.call({ jsonrpc: '2.0', id: 1, method: 'eth_chainId' }, 1)).rejects.toMatchObject({
       code: -32602,
       httpStatus: 400
     });
+    expect(warn).toHaveBeenCalled();
   });
 
   it('preserves upstream error data objects', async () => {

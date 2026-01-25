@@ -31,12 +31,13 @@ export class RpcError extends Error {
   }
 }
 
-export function invalidParams(message: string): RpcError {
+export function invalidParams(message: string, data?: Record<string, unknown>): RpcError {
   return new RpcError({
     message,
     code: -32602,
     httpStatus: 400,
-    category: 'invalid_params'
+    category: 'invalid_params',
+    data
   });
 }
 
@@ -72,11 +73,30 @@ export function pendingBlockError(): RpcError {
 }
 
 export function rangeTooLargeError(maxRange: number): RpcError {
-  return invalidParams(`range too large; max block range ${maxRange}`);
+  return new RpcError({
+    message: `range too large; max block range ${maxRange}`,
+    code: -32012,
+    httpStatus: 400,
+    category: 'invalid_params'
+  });
 }
 
 export function tooManyAddressesError(): RpcError {
-  return invalidParams('specify less number of address');
+  return new RpcError({
+    message: 'specify less number of address',
+    code: -32012,
+    httpStatus: 400,
+    category: 'invalid_params'
+  });
+}
+
+export function timeoutError(message = 'request timeout'): RpcError {
+  return new RpcError({
+    message,
+    code: -32000,
+    httpStatus: 504,
+    category: 'server_error'
+  });
 }
 
 export function missingDataError(message = 'block not found'): RpcError {

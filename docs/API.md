@@ -4,11 +4,15 @@ Supported methods:
 - `eth_chainId`
 - `eth_blockNumber`
 - `eth_getBlockByNumber`
+- `eth_getBlockByHash` (requires upstream RPC)
+- `eth_getTransactionByHash` (requires upstream RPC)
+- `eth_getTransactionReceipt` (requires upstream RPC)
 - `eth_getTransactionByBlockNumberAndIndex`
 - `eth_getLogs`
 - `trace_block`
+- `trace_transaction` (requires upstream RPC)
 
-Unsupported methods return HTTP 404 with JSON-RPC error `-32601` and message containing `method not supported`.
+Unsupported methods (or upstream-only methods without upstream configured) return HTTP 404 with JSON-RPC error `-32601` and message containing `method not supported`.
 
 ## Finality
 - `latest`/empty: `/head` + `/stream`
@@ -24,7 +28,7 @@ Response shape:
 {
   "service": { "name": "sqd-portal-rpc-wrapper", "version": "0.1.0" },
   "mode": "single",
-  "methods": ["eth_chainId","eth_blockNumber","eth_getBlockByNumber","eth_getTransactionByBlockNumberAndIndex","eth_getLogs","trace_block"],
+  "methods": ["eth_chainId","eth_blockNumber","eth_getBlockByNumber","eth_getBlockByHash","eth_getTransactionByHash","eth_getTransactionReceipt","eth_getTransactionByBlockNumberAndIndex","eth_getLogs","trace_block","trace_transaction"],
   "chains": {
     "1": {
       "dataset": "ethereum-mainnet",

@@ -15,11 +15,13 @@ describe('errors', () => {
     const err = rangeTooLargeError(1000);
     expect(err.message).toContain('range too large');
     expect(err.message).toContain('max block range');
+    expect(err.code).toBe(-32012);
   });
 
   it('too many addresses message matches', () => {
     const err = tooManyAddressesError();
     expect(err.message).toContain('specify less number of address');
+    expect(err.code).toBe(-32012);
   });
 
   it('pending block message matches', () => {

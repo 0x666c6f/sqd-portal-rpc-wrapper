@@ -25,6 +25,10 @@ export class PortalClient {
   private readonly fetchImpl: typeof fetch;
   private readonly logger?: PortalClientOptions['logger'];
   private readonly metadataCache = new Map<string, { data: PortalMetadataResponse; fetchedAt: number }>();
+  private readonly breakerThreshold: number;
+  private readonly breakerResetMs: number;
+  private breakerFailures = 0;
+  private breakerOpenUntil = 0;
 
   constructor(private readonly config: Config, options: PortalClientOptions = {}) {
     this.baseUrl = config.portalBaseUrl;
@@ -36,6 +40,8 @@ export class PortalClient {
     this.maxNdjsonBytes = config.maxNdjsonBytes;
     this.fetchImpl = options.fetchImpl || fetch;
     this.logger = options.logger;
+    this.breakerThreshold = config.portalCircuitBreakerThreshold;
+    this.breakerResetMs = config.portalCircuitBreakerResetMs;
   }
 
   async fetchHead(
@@ -98,9 +104,6 @@ export class PortalClient {
     if (cached && now - cached.fetchedAt < this.metadataTtlMs) {
       return cached.data;
     }
-    if (process.env.NODE_ENV === 'test' && this.fetchImpl === fetch && !cached) {
-      return { dataset: baseUrl.split('/').pop() || 'unknown', start_block: 0, real_time: false };
-    }
     try {
       const data = await this.fetchMetadata(baseUrl, traceparent);
       this.metadataCache.set(baseUrl, { data, fetchedAt: now });
@@ -134,6 +137,10 @@ export class PortalClient {
     body?: string,
     traceparent?: string
   ): Promise<Response> {
+    if (this.isBreakerOpen()) {
+      this.logger?.warn?.({ endpoint: endpointLabel(url) }, 'portal circuit open');
+      throw unavailableError('portal circuit open');
+    }
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
@@ -161,6 +168,7 @@ export class PortalClient {
 
       clearTimeout(timeout);
       const elapsed = (performance.now() - start) / 1000;
+      this.recordBreaker(resp.status);
       metrics.portal_requests_total.labels(endpointLabel(url), String(resp.status)).inc();
       metrics.portal_latency_seconds.labels(endpointLabel(url)).observe(elapsed);
       this.logger?.info({ endpoint: endpointLabel(url), status: resp.status, durationMs: Math.round(elapsed * 1000) }, 'portal response');
@@ -168,6 +176,7 @@ export class PortalClient {
       return resp;
     } catch (err) {
       clearTimeout(timeout);
+      this.recordBreaker(0);
       this.logger?.warn?.({ endpoint: endpointLabel(url), error: err instanceof Error ? err.message : String(err) }, 'portal error');
       throw normalizeError(err);
     }
@@ -182,6 +191,29 @@ export class PortalClient {
       return normalizePortalBaseUrl(base);
     }
     return normalizePortalBaseUrl(`${base}/${dataset}`);
+  }
+
+  private isBreakerOpen(): boolean {
+    if (this.breakerThreshold <= 0) {
+      return false;
+    }
+    return Date.now() < this.breakerOpenUntil;
+  }
+
+  private recordBreaker(status: number) {
+    if (this.breakerThreshold <= 0) {
+      return;
+    }
+    if (status >= 500 || status === 0) {
+      this.breakerFailures += 1;
+      if (this.breakerFailures >= this.breakerThreshold) {
+        this.breakerOpenUntil = Date.now() + this.breakerResetMs;
+        this.breakerFailures = 0;
+      }
+      return;
+    }
+    this.breakerFailures = 0;
+    this.breakerOpenUntil = 0;
   }
 }
 
@@ -209,26 +241,29 @@ function endpointLabel(url: string): string {
   return 'unknown';
 }
 
-async function readBody(resp: Response): Promise<{ text: string; json?: unknown }> {
+async function readBody(resp: Response): Promise<{ text: string; json?: unknown; jsonError?: string }> {
   try {
-    const clone = resp.clone();
     const text = await resp.text();
     let json: unknown = undefined;
+    let jsonError: string | undefined;
     try {
-      json = await clone.json();
-    } catch {
+      json = text ? JSON.parse(text) : undefined;
+    } catch (err) {
       json = undefined;
+      jsonError = String(err);
     }
-    return { text: text || 'response body unavailable', json };
+    const resolvedText = text || 'response body unavailable';
+    const textWithParseError = jsonError ? `${resolvedText} (json parse error: ${jsonError})` : resolvedText;
+    return { text: textWithParseError, json, jsonError };
   } catch (err) {
     return { text: `response body unavailable: ${err instanceof Error ? err.message : String(err)}` };
   }
 }
 
-function mapPortalStatusError(status: number, body: { text: string; json?: unknown }) {
+function mapPortalStatusError(status: number, body: { text: string; json?: unknown; jsonError?: string }) {
   switch (status) {
     case 400:
-      return invalidParams(`invalid portal response: ${body.text}`);
+      return invalidParams(`invalid portal response: ${body.text}`, body.jsonError ? { jsonError: body.jsonError } : undefined);
     case 401:
     case 403:
       return unauthorizedError();

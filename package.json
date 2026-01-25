@@ -12,7 +12,8 @@
     "lint": "eslint . --ext .ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --coverage",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "bench": "tsx scripts/bench.ts"
   },
   "engines": {
     "node": ">=20.10.0"

@@ -3,11 +3,13 @@
 Standalone HTTP JSON-RPC 2.0 wrapper for SQD Portal EVM datasets. Supports a minimal, historical-only method set with strict validation and NDJSON streaming.
 
 ## Features
-- Methods: `eth_chainId`, `eth_blockNumber`, `eth_getBlockByNumber`, `eth_getTransactionByBlockNumberAndIndex`, `eth_getLogs`, `trace_block`
+- Methods: `eth_chainId`, `eth_blockNumber`, `eth_getBlockByNumber`, `eth_getBlockByHash*`, `eth_getTransactionByHash*`, `eth_getTransactionReceipt*`, `eth_getTransactionByBlockNumberAndIndex`, `eth_getLogs`, `trace_block`, `trace_transaction*`
 - Single-chain and multi-chain modes
 - Portal finalized fallback
 - Prometheus metrics at `/metrics`
 - Docker + docker compose
+
+\* Requires upstream RPC (`UPSTREAM_RPC_URL` or `UPSTREAM_RPC_URL_MAP`).
 
 ## Quickstart
 
@@ -63,6 +65,8 @@ curl -s -X POST http://localhost:8080/v1/evm/1 \
 | `PORTAL_API_KEY_HEADER` | `X-API-Key` | |
 | `PORTAL_REALTIME_MODE` | `auto` | `auto|required|disabled` |
 | `PORTAL_METADATA_TTL_MS` | `300000` | Metadata cache TTL |
+| `PORTAL_CIRCUIT_BREAKER_THRESHOLD` | `0` | Disable with 0; open circuit after N failures |
+| `PORTAL_CIRCUIT_BREAKER_RESET_MS` | `30000` | Circuit reset window |
 | `WRAPPER_API_KEY` | | Optional incoming auth |
 | `WRAPPER_API_KEY_HEADER` | `X-API-Key` | |
 | `UPSTREAM_RPC_URL` | | Optional JSON-RPC fallback URL |
@@ -75,6 +79,7 @@ curl -s -X POST http://localhost:8080/v1/evm/1 \
 | `MAX_NDJSON_LINE_BYTES` | `8388608` | |
 | `MAX_NDJSON_BYTES` | `67108864` | |
 | `MAX_REQUEST_BODY_BYTES` | `8388608` | |
+| `HANDLER_TIMEOUT_MS` | `60000` | Per-request handler timeout (ms) |
 
 ## Docker
 

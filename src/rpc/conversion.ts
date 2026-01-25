@@ -268,9 +268,6 @@ function normalizeNonce(value: unknown): string {
     return hex;
   }
   const raw = hex.slice(2);
-  if (raw.length >= 16) {
-    return `0x${raw.padStart(16, '0')}`;
-  }
   return `0x${raw.padStart(16, '0')}`;
 }
 

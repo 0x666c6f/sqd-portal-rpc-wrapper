@@ -61,6 +61,118 @@ describe('handlers', () => {
     expect(response!.result).toBe('0x1');
   });
 
+  it('dedupes cached requests', async () => {
+    const fetchHead = vi.fn().mockResolvedValue({ head: { number: 7, hash: '0xabc' }, finalizedAvailable: false });
+    const portalSpy = {
+      ...portal,
+      fetchHead
+    };
+    const cache = new Map<string, Promise<unknown>>();
+    await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_blockNumber', params: [] },
+      { config, portal: portalSpy as any, chainId: 1, requestId: 'test', requestCache: cache }
+    );
+    await handleJsonRpc(
+      { jsonrpc: '2.0', id: 2, method: 'eth_blockNumber', params: [] },
+      { config, portal: portalSpy as any, chainId: 1, requestId: 'test', requestCache: cache }
+    );
+    expect(fetchHead).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips cache when params are not serializable', async () => {
+    const params: unknown[] = [];
+    params.push(params);
+    const { response } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_chainId', params },
+      { config, portal: portal as any, chainId: 1, requestId: 'test', requestCache: new Map() }
+    );
+    expect(response.result).toBe('0x1');
+  });
+
+  it('builds cache key when params are undefined', async () => {
+    const { response } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_chainId' },
+      { config, portal: portal as any, chainId: 1, requestId: 'test', requestCache: new Map() }
+    );
+    expect(response.result).toBe('0x1');
+  });
+
+  it('caches start_block per request', async () => {
+    const getMetadata = vi.fn().mockResolvedValue({ dataset: 'ethereum-mainnet', start_block: 0, real_time: true });
+    const portalSpy = {
+      ...portalWithData,
+      getMetadata
+    };
+    const startBlockCache = new Map<string, Promise<number | undefined>>();
+    await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: ['0x5', false] },
+      { config, portal: portalSpy as any, chainId: 1, requestId: 'test', startBlockCache }
+    );
+    await handleJsonRpc(
+      { jsonrpc: '2.0', id: 2, method: 'eth_getBlockByNumber', params: ['0x5', false] },
+      { config, portal: portalSpy as any, chainId: 1, requestId: 'test', startBlockCache }
+    );
+    expect(getMetadata).toHaveBeenCalledTimes(1);
+  });
+
+  it('handles missing start_block in metadata cache', async () => {
+    const getMetadata = vi.fn().mockResolvedValue({ dataset: 'ethereum-mainnet', real_time: true });
+    const portalSpy = {
+      ...portalWithData,
+      getMetadata
+    };
+    const startBlockCache = new Map<string, Promise<number | undefined>>();
+    const { response } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: ['0x5', false] },
+      { config, portal: portalSpy as any, chainId: 1, requestId: 'test', startBlockCache }
+    );
+    expect(response.result).toBeTruthy();
+    expect(getMetadata).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears start_block cache on metadata error', async () => {
+    const getMetadata = vi.fn().mockRejectedValue(new Error('boom'));
+    const baseUrl = 'https://portal/ethereum-mainnet';
+    const portalSpy = {
+      ...portal,
+      getMetadata,
+      buildDatasetBaseUrl: () => baseUrl
+    };
+    const startBlockCache = new Map<string, Promise<number | undefined>>();
+    const { response, httpStatus } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: ['0x5', false] },
+      { config, portal: portalSpy as any, chainId: 1, requestId: 'test', startBlockCache }
+    );
+    expect(httpStatus).toBe(502);
+    expect(response.error?.code).toBe(-32603);
+    expect(startBlockCache.has(baseUrl)).toBe(false);
+  });
+
+  it('times out long-running handler', async () => {
+    vi.useFakeTimers();
+    const portalSlow = {
+      ...portal,
+      fetchHead: vi.fn().mockImplementation(() => new Promise(() => {}))
+    };
+    const resultPromise = handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_blockNumber', params: [] },
+      { config, portal: portalSlow as any, chainId: 1, requestId: 'test', requestTimeoutMs: 5 }
+    );
+    await vi.advanceTimersByTimeAsync(5);
+    const { response, httpStatus } = await resultPromise;
+    expect(httpStatus).toBe(504);
+    expect(response.error?.code).toBe(-32000);
+    vi.useRealTimers();
+  });
+
+  it('skips timeout when disabled', async () => {
+    const { response } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] },
+      { config, portal: portal as any, chainId: 1, requestId: 'test', requestTimeoutMs: -1 }
+    );
+    expect(response.result).toBe('0x1');
+  });
+
   it('handles eth_getBlockByNumber empty', async () => {
     const { response } = await handleJsonRpc(
       { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: ['0x1', false] },
@@ -199,7 +311,7 @@ describe('handlers', () => {
       { config: limited, portal: portalWithData as any, chainId: 1, requestId: 'test' }
     );
     expect(httpStatus).toBe(400);
-    expect(response!.error?.code).toBe(-32602);
+    expect(response!.error?.code).toBe(-32012);
   });
 
   it('returns empty traces before start_block', async () => {
@@ -249,6 +361,28 @@ describe('handlers', () => {
       { config, portal: portalWithData as any, chainId: 1, requestId: 'test' }
     );
     expect(response!.result).toBeTruthy();
+  });
+
+  it('falls back to linear search for transaction index', async () => {
+    const portalUnsorted = {
+      ...portal,
+      streamBlocks: async () => [
+        {
+          header: sampleBlock.header,
+          transactions: [
+            { transactionIndex: 1, hash: '0xfirst', from: '0xfrom', to: '0xto', value: '0x1', input: '0x', nonce: '0x1', gas: '0x2', type: '0x0' },
+            { transactionIndex: 0, hash: '0xsecond', from: '0xfrom', to: '0xto', value: '0x1', input: '0x', nonce: '0x1', gas: '0x2', type: '0x0' }
+          ]
+        }
+      ],
+      getMetadata: async () => ({ dataset: 'ethereum-mainnet', start_block: 0, real_time: true })
+    };
+    const { response } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_getTransactionByBlockNumberAndIndex', params: ['0x5', '0x0'] },
+      { config, portal: portalUnsorted as any, chainId: 1, requestId: 'test' }
+    );
+    const result = response!.result as { hash?: string };
+    expect(result.hash).toBe('0xsecond');
   });
 
   it('rejects missing params for eth_getTransactionByBlockNumberAndIndex', async () => {
@@ -436,6 +570,96 @@ describe('handlers', () => {
       { config: configWithUpstream, portal: portal as any, chainId: 1, requestId: 'test', upstream }
     );
     expect(response!.result).toEqual([]);
+  });
+
+  it('proxies hash-based methods to upstream', async () => {
+    const configWithUpstream = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1',
+      UPSTREAM_RPC_URL: 'https://upstream.rpc'
+    });
+    const fetchImpl = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string) as { method: string; id: number };
+      const resultMap: Record<string, unknown> = {
+        eth_getBlockByHash: { hash: '0xabc' },
+        eth_getTransactionByHash: { hash: '0xdef' },
+        eth_getTransactionReceipt: { transactionHash: '0xdef' },
+        trace_transaction: [{ traceAddress: [] }]
+      };
+      return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: resultMap[body.method] }));
+    });
+    const upstream = new UpstreamRpcClient(configWithUpstream, { fetchImpl });
+    const hash = '0x' + '11'.repeat(32);
+    const methods: Array<{ name: string; params: unknown[] }> = [
+      { name: 'eth_getBlockByHash', params: [hash, false] },
+      { name: 'eth_getTransactionByHash', params: [hash] },
+      { name: 'eth_getTransactionReceipt', params: [hash] },
+      { name: 'trace_transaction', params: [hash] }
+    ];
+    for (const { name, params } of methods) {
+      const { response } = await handleJsonRpc(
+        { jsonrpc: '2.0', id: 1, method: name, params },
+        { config: configWithUpstream, portal: portal as any, chainId: 1, requestId: 'test', upstream }
+      );
+      expect(response!.result).toBeDefined();
+    }
+  });
+
+  it('rejects hash-based methods without upstream', async () => {
+    const hash = '0x' + '11'.repeat(32);
+    const { response, httpStatus } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByHash', params: [hash, false] },
+      { config, portal: portal as any, chainId: 1, requestId: 'test' }
+    );
+    expect(httpStatus).toBe(404);
+    expect(response!.error?.code).toBe(-32601);
+  });
+
+  it('rejects invalid params for eth_getBlockByHash', async () => {
+    const { response, httpStatus } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByHash', params: ['0x1234'] },
+      { config, portal: portal as any, chainId: 1, requestId: 'test' }
+    );
+    expect(httpStatus).toBe(400);
+    expect(response.error?.code).toBe(-32602);
+  });
+
+  it('rejects invalid fullTx flag for eth_getBlockByHash', async () => {
+    const hash = '0x' + '11'.repeat(32);
+    const { response, httpStatus } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByHash', params: [hash, 'nope'] },
+      { config, portal: portal as any, chainId: 1, requestId: 'test' }
+    );
+    expect(httpStatus).toBe(400);
+    expect(response.error?.code).toBe(-32602);
+  });
+
+  it('rejects invalid params for eth_getTransactionByHash', async () => {
+    const { response, httpStatus } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_getTransactionByHash', params: ['0x1234'] },
+      { config, portal: portal as any, chainId: 1, requestId: 'test' }
+    );
+    expect(httpStatus).toBe(400);
+    expect(response.error?.code).toBe(-32602);
+  });
+
+  it('rejects invalid params for eth_getTransactionReceipt', async () => {
+    const { response, httpStatus } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_getTransactionReceipt', params: ['0x1234'] },
+      { config, portal: portal as any, chainId: 1, requestId: 'test' }
+    );
+    expect(httpStatus).toBe(400);
+    expect(response.error?.code).toBe(-32602);
+  });
+
+  it('rejects invalid params for trace_transaction', async () => {
+    const { response, httpStatus } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'trace_transaction', params: ['0x1234'] },
+      { config, portal: portal as any, chainId: 1, requestId: 'test' }
+    );
+    expect(httpStatus).toBe(400);
+    expect(response!.error?.code).toBe(-32602);
   });
 
   it('rejects missing params for trace_block', async () => {
