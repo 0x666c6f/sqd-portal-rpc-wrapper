@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { handleJsonRpc } from '../src/rpc/handlers';
 import { loadConfig } from '../src/config';
-import { conflictError } from '../src/errors';
+import { conflictError, portalUnsupportedFieldError } from '../src/errors';
 import { UpstreamRpcClient } from '../src/rpc/upstream';
 
 const config = loadConfig({
@@ -199,6 +199,31 @@ describe('handlers', () => {
     expect(result.transactions?.[0].hash).toBe('0xtx');
   });
 
+  it('falls back to upstream when portal lacks required block fields', async () => {
+    const configWithUpstream = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1',
+      UPSTREAM_RPC_URL: 'https://upstream.rpc',
+      UPSTREAM_METHODS_ENABLED: 'true'
+    });
+    const portalMissing = {
+      ...portal,
+      streamBlocks: async () => {
+        throw portalUnsupportedFieldError('withdrawalsRoot');
+      }
+    };
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { number: '0x1' } }))
+    );
+    const upstream = new UpstreamRpcClient(configWithUpstream, { fetchImpl });
+    const { response } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: ['0x1', false] },
+      { config: configWithUpstream, portal: portalMissing as any, chainId: 1, requestId: 'test', upstream }
+    );
+    expect(response!.result).toEqual({ number: '0x1' });
+  });
+
   it('proxies pending blocks to upstream', async () => {
     const configWithUpstream = loadConfig({
       SERVICE_MODE: 'single',
@@ -363,8 +388,12 @@ describe('handlers', () => {
       { config: configOpen, portal: portalOpen as any, chainId: 1, requestId: 'test' }
     );
     expect(seen).toBeTruthy();
-    expect(seen?.toBlock).toBe(5);
-    expect(seen?.includeAllBlocks).toBe(true);
+    if (!seen) {
+      throw new Error('expected portal request');
+    }
+    const seenRequest = seen as { toBlock?: number; includeAllBlocks?: boolean };
+    expect(seenRequest.toBlock).toBe(5);
+    expect(seenRequest.includeAllBlocks).toBe(true);
   });
 
   it('returns empty logs when block has no logs', async () => {
@@ -564,6 +593,56 @@ describe('handlers', () => {
       { config, portal: portalWithData as any, chainId: 1, requestId: 'test' }
     );
     expect(Array.isArray(response!.result)).toBe(true);
+  });
+
+  it('falls back to upstream when portal lacks required tx fields', async () => {
+    const configWithUpstream = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1',
+      UPSTREAM_RPC_URL: 'https://upstream.rpc',
+      UPSTREAM_METHODS_ENABLED: 'true'
+    });
+    const portalMissing = {
+      ...portal,
+      streamBlocks: async () => {
+        throw portalUnsupportedFieldError('accessList');
+      }
+    };
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { hash: '0xabc' } }))
+    );
+    const upstream = new UpstreamRpcClient(configWithUpstream, { fetchImpl });
+    const { response } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_getTransactionByBlockNumberAndIndex', params: ['0x1', '0x0'] },
+      { config: configWithUpstream, portal: portalMissing as any, chainId: 1, requestId: 'test', upstream }
+    );
+    expect(response!.result).toEqual({ hash: '0xabc' });
+  });
+
+  it('falls back to upstream when portal lacks required trace fields', async () => {
+    const configWithUpstream = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1',
+      UPSTREAM_RPC_URL: 'https://upstream.rpc',
+      UPSTREAM_METHODS_ENABLED: 'true'
+    });
+    const portalMissing = {
+      ...portal,
+      streamBlocks: async () => {
+        throw portalUnsupportedFieldError('action');
+      }
+    };
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: [{ traceAddress: [] }] }))
+    );
+    const upstream = new UpstreamRpcClient(configWithUpstream, { fetchImpl });
+    const { response } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'trace_block', params: ['0x5'] },
+      { config: configWithUpstream, portal: portalMissing as any, chainId: 1, requestId: 'test', upstream }
+    );
+    expect(response!.result).toEqual([{ traceAddress: [] }]);
   });
 
   it('proxies trace_block pending to upstream', async () => {

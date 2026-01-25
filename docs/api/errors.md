@@ -56,7 +56,7 @@ Unsupported method or upstream-only method without upstream configured:
 ```
 
 ::: tip
-The message always contains `method not supported` for eRPC normalization.
+The message always contains `method not supported` for downstream normalization.
 :::
 
 ### Invalid Params (-32602)
@@ -82,7 +82,7 @@ The `pending` block tag is not supported:
 ```
 
 ::: tip
-The message always contains `pending block not found` for eRPC normalization.
+The message always contains `pending block not found` for downstream normalization.
 :::
 
 ### Range Too Large (-32012)
@@ -94,7 +94,7 @@ Log query block range exceeds limit:
 ```
 
 ::: tip
-The message always contains `range too large` and `max block range` for eRPC normalization.
+The message always contains `range too large` and `max block range` for downstream normalization.
 :::
 
 ### Too Many Addresses (-32012)
@@ -114,7 +114,7 @@ Portal rate limiting:
 ```
 
 ::: tip
-The message always contains `Too Many Requests` or `rate limit` for eRPC normalization.
+The message always contains `Too Many Requests` or `rate limit` for downstream normalization.
 :::
 
 ### Unauthorized (-32016)

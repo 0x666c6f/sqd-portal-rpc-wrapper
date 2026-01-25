@@ -5,7 +5,7 @@
 
 ## Goal
 
-Extract SQD Portal wrapper into standalone service. eRPC uses it as standard EVM JSON-RPC upstream.
+Extract SQD Portal wrapper into standalone service. Any client can use it as a standard EVM JSON-RPC upstream.
 
 ## Non-goals
 
@@ -17,22 +17,22 @@ Extract SQD Portal wrapper into standalone service. eRPC uses it as standard EVM
 
 ```mermaid
 flowchart LR
-  A[eRPC] -->|JSON-RPC| B[Portal Wrapper]
+  A[Client] -->|JSON-RPC| B[Portal Wrapper]
   B -->|NDJSON stream| C[SQD Portal]
   B -->|JSON-RPC| A
 ```
 
 - Wrapper handles dataset routing, NDJSON parsing, request translation, JSON-RPC response shaping.
-- eRPC treats wrapper as normal `type: evm` HTTP upstream.
+- Clients can treat the wrapper as a normal EVM JSON-RPC upstream.
 
-## Design Alignment (eRPC SQD Portal Integration)
+## Design Alignment
 
 - Same method allowlist and historical-only scope.
 - Same portal endpoints: `/head`, `/finalized-head`, `/stream`, `/finalized-stream`.
 - Same chainId -> dataset mapping and override semantics.
 - Same range/address/topic validation and limits.
 - Same finalized fallback behavior.
-- Same error intent and message keywords for eRPC normalization.
+- Same error intent and message keywords for downstream normalization.
 - Same field selection strategy (minimal fields unless full tx requested).
 
 ## Implementation Language
@@ -144,7 +144,7 @@ Optional upstream-only methods (when `UPSTREAM_METHODS_ENABLED=true` and upstrea
 ### `eth_getLogs`
 
 - `blockHash` filter unsupported -> error (see Error Model).
-- Use client-side error code + message to encourage eRPC fallback (mirrors eRPC ErrUpstreamRequestSkipped behavior).
+- Use error code + message to allow optional client-side fallback when upstream is enabled.
 - `toBlock` default: `/head`.
 - `fromBlock` default: `toBlock`.
 - Address/topics arrays; lowercase; map to Portal filters.
@@ -161,12 +161,12 @@ Optional upstream-only methods (when `UPSTREAM_METHODS_ENABLED=true` and upstrea
 
 ```mermaid
 sequenceDiagram
-  participant E as eRPC
+  participant C as Client
   participant W as Wrapper
   participant P as SQD Portal
-  E->>W: eth_getLogs (from/to/address/topics)
+  C->>W: eth_getLogs (from/to/address/topics)
   alt blockHash filter present
-    W-->>E: JSON-RPC error (blockHash not supported)
+    W-->>C: JSON-RPC error (blockHash not supported)
   else standard range
     opt toBlock missing
       W->>P: GET /head
@@ -174,7 +174,7 @@ sequenceDiagram
     end
     W->>P: POST /stream (range + filters)
     P-->>W: NDJSON blocks
-    W-->>E: JSON-RPC logs[]
+    W-->>C: JSON-RPC logs[]
   end
 ```
 
@@ -182,49 +182,49 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-  participant E as eRPC
+  participant C as Client
   participant W as Wrapper
   participant P as SQD Portal
-  E->>W: eth_blockNumber
+  C->>W: eth_blockNumber
   W->>P: GET /head
   P-->>W: { number }
-  W-->>E: JSON-RPC hex blockNumber
+  W-->>C: JSON-RPC hex blockNumber
 ```
 
 ### `trace_block`
 
 ```mermaid
 sequenceDiagram
-  participant E as eRPC
+  participant C as Client
   participant W as Wrapper
   participant P as SQD Portal
-  E->>W: trace_block (blockTag)
+  C->>W: trace_block (blockTag)
   W->>P: POST /stream (block range + traces)
   P-->>W: NDJSON block
-  W-->>E: JSON-RPC traces[]
+  W-->>C: JSON-RPC traces[]
 ```
 
 ### Error path (Portal 429)
 
 ```mermaid
 sequenceDiagram
-  participant E as eRPC
+  participant C as Client
   participant W as Wrapper
   participant P as SQD Portal
-  E->>W: eth_getLogs
+  C->>W: eth_getLogs
   W->>P: POST /stream
   P-->>W: 429 Too Many Requests
-  W-->>E: JSON-RPC error (-32005, message includes "rate limit")
+  W-->>C: JSON-RPC error (-32005, message includes "rate limit")
 ```
 
 ### `eth_getBlockByNumber` (finalized fallback)
 
 ```mermaid
 sequenceDiagram
-  participant E as eRPC
+  participant C as Client
   participant W as Wrapper
   participant P as SQD Portal
-  E->>W: eth_getBlockByNumber (tag=finalized)
+  C->>W: eth_getBlockByNumber (tag=finalized)
   W->>P: GET /finalized-head
   alt finalized endpoint missing
     P-->>W: 404
@@ -234,7 +234,7 @@ sequenceDiagram
   end
   W->>P: POST /finalized-stream or /stream
   P-->>W: NDJSON block
-  W-->>E: JSON-RPC block
+  W-->>C: JSON-RPC block
 ```
 
 ## Finality Rules
@@ -259,7 +259,7 @@ If `toBlock` not set and `fromBlock` uses finalized/safe, still use non-finalize
 
 ## Error Model
 
-Wrapper returns JSON-RPC error object; HTTP status reflects severity. Messages must include substrings that trigger eRPC normalization.
+Wrapper returns JSON-RPC error object; HTTP status reflects severity. Messages include substrings that support downstream normalization and optional fallback.
 
 ### Mapping
 
@@ -267,10 +267,10 @@ Wrapper returns JSON-RPC error object; HTTP status reflects severity. Messages m
 |---|---:|---:|---|---|
 | Invalid params | 400 | -32602 | `invalid` | input validation failures |
 | Unsupported method | 404 | -32601 | `method not supported` | |
-| Pending tag | 400 | -32602 | `pending block not found` | eRPC treats as unsupported tag |
-| BlockHash filter | 400 | -32602 | `blockHash filter not supported` | allow fallback |
+| Pending tag | 400 | -32602 | `pending block not found` | clients can treat as unsupported tag |
+| BlockHash filter | 400 | -32602 | `blockHash filter not supported` | optional upstream fallback if enabled |
 | Range too large | 400 | -32012 | `range too large` | include `max block range` |
-| Too many addresses | 400 | -32012 | `specify less number of address` | eRPC -> addresses too large |
+| Too many addresses | 400 | -32012 | `specify less number of address` | clients may treat as addresses too large |
 | Missing data | 404 | -32014 | `block not found` | or `requested data is not available` |
 | Rate limit | 429 | -32005 | `Too Many Requests` | or `rate limit` |
 | Unauthorized | 401/403 | -32016 | `unauthorized` | |
@@ -279,7 +279,7 @@ Wrapper returns JSON-RPC error object; HTTP status reflects severity. Messages m
 
 ### Canonical error strings
 
-Use these exact substrings (case-sensitive) to match eRPC normalization:
+Use these exact substrings (case-sensitive) to support downstream normalization:
 
 - Range too large: `range too large`, `max block range`
 - Too many addresses: `specify less number of address`
@@ -360,39 +360,16 @@ Use these exact substrings (case-sensitive) to match eRPC normalization:
 - NDJSON streaming parse, bounded line size + max bytes.
 - Concurrency limiter; 503 on overload.
 
-## eRPC Integration
+## Integration (Optional)
 
-Example:
-
-```yaml
-projects:
-  - id: main
-    networks:
-      - architecture: evm
-        evm: { chainId: 1 }
-        upstreams:
-          - id: portal-wrapper
-            type: evm
-            endpoint: http://portal-wrapper:8080/v1/evm/1
-            jsonRpc:
-              headers:
-                X-API-Key: ${PORTAL_WRAPPER_API_KEY}
-            allowMethods:
-              - eth_chainId
-              - eth_blockNumber
-              - eth_getBlockByNumber
-              - eth_getTransactionByBlockNumberAndIndex
-              - eth_getLogs
-              - trace_block
-            ignoreMethods: ["*"]
-          - id: rpc-latest
-            type: evm
-            endpoint: https://rpc.example
-```
+If the wrapper sits behind a gateway or proxy:
+- allowlist supported methods
+- forward required auth headers
+- enable upstream-only methods only when configured
 
 ## Migration Plan
 
-1. Deploy wrapper; wire one project in eRPC.
+1. Deploy wrapper; wire one downstream client or gateway.
 2. Remove `SqdPortalClient` path; keep SQD vendor mapping only if still needed elsewhere.
 3. Update docs/config templates.
 
@@ -407,4 +384,4 @@ projects:
 
 - Single-chain vs multi-chain routing in prod?
 - Use missing-data error vs empty result for portal lag?
-- How strict should error messages be to maximize eRPC fallback?
+- How strict should error messages be to maximize client-side fallback?

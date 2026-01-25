@@ -3,7 +3,7 @@ import { JsonRpcRequest, JsonRpcResponse, responseId, successResponse, errorResp
 import { PortalClient } from '../portal/client';
 import { PortalRequest, allBlockFieldsSelection, allLogFieldsSelection, allTraceFieldsSelection, allTransactionFieldsSelection, txHashOnlyFieldsSelection } from '../portal/types';
 import { resolveDataset } from '../portal/mapping';
-import { RpcError, invalidParams, methodNotSupported, normalizeError, rangeTooLargeError, timeoutError } from '../errors';
+import { RpcError, invalidParams, isPortalUnsupportedFieldError, methodNotSupported, normalizeError, rangeTooLargeError, timeoutError } from '../errors';
 import { convertBlockToRpc, convertLogToRpc, convertTraceToRpc, convertTxToRpc } from './conversion';
 import { assertArray, assertObject, parseBlockNumber, parseLogFilter, parseTransactionIndex } from './validation';
 import { metrics } from '../metrics';
@@ -149,14 +149,25 @@ async function handleGetBlockByNumber(request: JsonRpcRequest, ctx: HandlerConte
     transactions: [{}]
   };
 
-  const blocks = await ctx.portal.streamBlocks(
-    baseUrl,
-    blockTag.useFinalized,
-    portalReq,
-    ctx.traceparent,
-    ctx.recordPortalHeaders,
-    ctx.requestId
-  );
+  let blocks: Awaited<ReturnType<PortalClient['streamBlocks']>>;
+  try {
+    blocks = await ctx.portal.streamBlocks(
+      baseUrl,
+      blockTag.useFinalized,
+      portalReq,
+      ctx.traceparent,
+      ctx.recordPortalHeaders,
+      ctx.requestId
+    );
+  } catch (err) {
+    if (isPortalUnsupportedFieldError(err)) {
+      const fallback = tryProxyUpstream(request, ctx);
+      if (fallback) {
+        return fallback;
+      }
+    }
+    throw err;
+  }
   if (blocks.length === 0) {
     return null;
   }
@@ -219,14 +230,25 @@ async function handleGetTransactionByBlockNumberAndIndex(request: JsonRpcRequest
     transactions: [{}]
   };
 
-  const blocks = await ctx.portal.streamBlocks(
-    baseUrl,
-    blockTag.useFinalized,
-    portalReq,
-    ctx.traceparent,
-    ctx.recordPortalHeaders,
-    ctx.requestId
-  );
+  let blocks: Awaited<ReturnType<PortalClient['streamBlocks']>>;
+  try {
+    blocks = await ctx.portal.streamBlocks(
+      baseUrl,
+      blockTag.useFinalized,
+      portalReq,
+      ctx.traceparent,
+      ctx.recordPortalHeaders,
+      ctx.requestId
+    );
+  } catch (err) {
+    if (isPortalUnsupportedFieldError(err)) {
+      const fallback = tryProxyUpstream(request, ctx);
+      if (fallback) {
+        return fallback;
+      }
+    }
+    throw err;
+  }
   if (blocks.length === 0) {
     return null;
   }
@@ -259,8 +281,8 @@ async function handleGetLogs(request: JsonRpcRequest, ctx: HandlerContext): Prom
     return proxyUpstream(request, ctx, 'blockHash filter not supported');
   }
   const startBlock = await getStartBlock(ctx, baseUrl);
-  const { useFinalized, logFilter } = parsed;
-  let { fromBlock, toBlock } = parsed;
+  const { useFinalized, logFilter, toBlock } = parsed;
+  let { fromBlock } = parsed;
   if (startBlock !== undefined) {
     if (toBlock < startBlock) {
       return [];
@@ -345,14 +367,25 @@ async function handleTraceBlock(request: JsonRpcRequest, ctx: HandlerContext): P
     transactions: [{}]
   };
 
-  const blocks = await ctx.portal.streamBlocks(
-    baseUrl,
-    blockTag.useFinalized,
-    portalReq,
-    ctx.traceparent,
-    ctx.recordPortalHeaders,
-    ctx.requestId
-  );
+  let blocks: Awaited<ReturnType<PortalClient['streamBlocks']>>;
+  try {
+    blocks = await ctx.portal.streamBlocks(
+      baseUrl,
+      blockTag.useFinalized,
+      portalReq,
+      ctx.traceparent,
+      ctx.recordPortalHeaders,
+      ctx.requestId
+    );
+  } catch (err) {
+    if (isPortalUnsupportedFieldError(err)) {
+      const fallback = tryProxyUpstream(request, ctx);
+      if (fallback) {
+        return fallback;
+      }
+    }
+    throw err;
+  }
   if (blocks.length === 0) {
     return [];
   }
@@ -440,6 +473,16 @@ function proxyUpstream(request: JsonRpcRequest, ctx: HandlerContext, message: st
   }
   if (!ctx.upstream || !ctx.upstream.resolveUrl(ctx.chainId)) {
     throw invalidParams(message);
+  }
+  return ctx.upstream.call(request, ctx.chainId, ctx.traceparent);
+}
+
+function tryProxyUpstream(request: JsonRpcRequest, ctx: HandlerContext): Promise<unknown> | undefined {
+  if (!ctx.config.upstreamMethodsEnabled) {
+    return undefined;
+  }
+  if (!ctx.upstream || !ctx.upstream.resolveUrl(ctx.chainId)) {
+    return undefined;
   }
   return ctx.upstream.call(request, ctx.chainId, ctx.traceparent);
 }

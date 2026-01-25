@@ -16,6 +16,7 @@ export default defineConfig({
       { text: 'Guide', link: '/guide/getting-started' },
       { text: 'API', link: '/api/' },
       { text: 'Config', link: '/config/' },
+      { text: 'Benchmarks', link: '/benchmarks/' },
       {
         text: 'Links',
         items: [
@@ -68,6 +69,14 @@ export default defineConfig({
             { text: 'Portal Settings', link: '/config/portal' },
             { text: 'Limits', link: '/config/limits' },
             { text: 'Security', link: '/config/security' }
+          ]
+        }
+      ],
+      '/benchmarks/': [
+        {
+          text: 'Benchmarks',
+          items: [
+            { text: 'Overview', link: '/benchmarks/' }
           ]
         }
       ]

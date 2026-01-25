@@ -143,7 +143,7 @@ PORTAL_OPEN_ENDED_STREAM=true
 
 ### UPSTREAM_RPC_URL
 
-URL for upstream JSON-RPC fallback. Requires `UPSTREAM_METHODS_ENABLED=true` to expose upstream-only methods.
+URL for optional upstream JSON-RPC. Requires `UPSTREAM_METHODS_ENABLED=true` to expose upstream-only methods.
 
 ```bash
 UPSTREAM_RPC_URL=https://eth.llamarpc.com

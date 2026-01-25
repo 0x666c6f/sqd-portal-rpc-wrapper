@@ -65,3 +65,8 @@ curl -s -X POST http://localhost:8080 \
 | `trace_transaction` | — | ✅ |
 
 <small>* `blockHash` filter proxied to upstream</small>
+
+## Benchmarks
+
+See the latest performance report and charts:
+- /benchmarks/

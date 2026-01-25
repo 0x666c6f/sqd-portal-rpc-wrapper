@@ -13,7 +13,7 @@ All configuration is done via environment variables.
 | `PORTAL_DATASET_MAP` | — | Multi-chain dataset map |
 | `PORTAL_CHAIN_ID` | — | Single-chain chain ID |
 | `PORTAL_API_KEY` | — | Portal authentication |
-| `UPSTREAM_RPC_URL` | — | Upstream RPC fallback |
+| `UPSTREAM_RPC_URL` | — | Optional upstream RPC |
 | `UPSTREAM_METHODS_ENABLED` | `false` | Enable upstream-only methods |
 
 ## Service Configuration

@@ -7,7 +7,7 @@
 [![Fastify](https://img.shields.io/badge/Fastify-4.x-black?logo=fastify&logoColor=white)](https://fastify.dev/)
 [![JSON-RPC](https://img.shields.io/badge/JSON--RPC-2.0-orange)](https://www.jsonrpc.org/specification)
 
-Standalone HTTP JSON-RPC 2.0 wrapper for [SQD Portal](https://docs.sqd.dev/) EVM datasets. Translates standard Ethereum RPC calls into optimized Portal NDJSON streaming queries with strict validation, finalized block support, and comprehensive observability.
+Standalone HTTP JSON-RPC 2.0 wrapper for [SQD Portal](https://beta.docs.sqd.dev/en/home) EVM datasets. Translates standard Ethereum RPC calls into optimized Portal NDJSON streaming queries with strict validation, finalized block support, and comprehensive observability.
 
 ## Features
 
@@ -134,7 +134,7 @@ docker compose up --build
 ```
 ┌─────────────┐     JSON-RPC      ┌──────────────────┐     NDJSON      ┌─────────────┐
 │   Client    │ ◄───────────────► │  Portal Wrapper  │ ◄─────────────► │ SQD Portal  │
-│  (eRPC)     │                   │    (Fastify)     │                 │  (datasets) │
+│             │                   │    (Fastify)     │                 │  (datasets) │
 └─────────────┘                   └────────┬─────────┘                 └─────────────┘
                                            │
                                            │ Optional fallback
@@ -197,6 +197,23 @@ Override or extend with `PORTAL_DATASET_MAP`.
 - Timing-safe API key comparison
 - Configurable request size limits
 - Concurrency limiting with 503 on overload
+
+## Benchmarking
+
+Latest charts and raw benchmark data live in the docs:
+- https://0x666c6f.github.io/sqd-portal-rpc-wrapper/benchmarks/
+
+Run locally:
+
+```bash
+RPC_URL=https://base-mainnet.g.alchemy.com/v2/<key> \
+WRAPPER_URL=http://localhost:8080/v1/evm/8453 \
+CHAIN_ID=8453 \
+BENCH_ITERATIONS=10 \
+BENCH_BATCH_SIZES=1,5,10,25,1000,10000 \
+BENCH_BATCH_METHODS=eth_blockNumber,eth_getBlockByNumber,eth_getLogs \
+npm run bench -- --json > docs/benchmarks/bench-results.json
+```
 
 ## Documentation
 

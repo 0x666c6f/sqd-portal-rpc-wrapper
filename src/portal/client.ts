@@ -1,6 +1,16 @@
 import { Config } from '../config';
 import { metrics } from '../metrics';
-import { normalizeError, rateLimitError, unauthorizedError, conflictError, unavailableError, missingDataError, invalidParams, serverError } from '../errors';
+import {
+  normalizeError,
+  rateLimitError,
+  unauthorizedError,
+  conflictError,
+  unavailableError,
+  missingDataError,
+  invalidParams,
+  portalUnsupportedFieldError,
+  serverError
+} from '../errors';
 import { PortalHeadResponse, PortalMetadataResponse, PortalRequest, PortalBlockResponse } from './types';
 import { parseNdjsonStream } from './ndjson';
 
@@ -107,6 +117,9 @@ export class PortalClient {
         const body = await readBody(resp);
         const unknownField = extractUnknownField(body.text);
         if (unknownField) {
+          if (!isNegotiableField(unknownField)) {
+            throw portalUnsupportedFieldError(unknownField);
+          }
           if (!unsupportedFields.has(unknownField)) {
             unsupportedFields.add(unknownField);
             this.unsupportedFieldsByBaseUrl.set(baseUrl, unsupportedFields);
@@ -352,6 +365,12 @@ async function readBody(resp: Response): Promise<{ text: string; json?: unknown;
 function extractUnknownField(text: string): string | undefined {
   const match = /unknown field `([^`]+)`/i.exec(text);
   return match?.[1];
+}
+
+const NEGOTIABLE_FIELDS = new Set(['authorizationList']);
+
+function isNegotiableField(field: string): boolean {
+  return NEGOTIABLE_FIELDS.has(field);
 }
 
 function applyUnsupportedFields(request: PortalRequest, unsupported: Set<string>): PortalRequest {

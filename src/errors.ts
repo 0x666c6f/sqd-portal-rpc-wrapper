@@ -162,6 +162,20 @@ export function serverError(message = 'server error'): RpcError {
   });
 }
 
+export function portalUnsupportedFieldError(field: string): RpcError {
+  return new RpcError({
+    message: `portal does not support required field ${field}`,
+    code: -32603,
+    httpStatus: 502,
+    category: 'server_error',
+    data: { requiredField: field }
+  });
+}
+
+export function isPortalUnsupportedFieldError(err: unknown): err is RpcError {
+  return err instanceof RpcError && typeof err.data?.requiredField === 'string';
+}
+
 export function normalizeError(err: unknown): RpcError {
   if (err instanceof RpcError) {
     return err;

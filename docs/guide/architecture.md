@@ -7,7 +7,7 @@ The SQD Portal RPC Wrapper translates standard Ethereum JSON-RPC calls into opti
 ```
 ┌─────────────┐     JSON-RPC      ┌──────────────────┐     NDJSON      ┌─────────────┐
 │   Client    │ ◄───────────────► │  Portal Wrapper  │ ◄─────────────► │ SQD Portal  │
-│  (eRPC)     │                   │    (Fastify)     │                 │  (datasets) │
+│             │                   │    (Fastify)     │                 │  (datasets) │
 └─────────────┘                   └────────┬─────────┘                 └─────────────┘
                                            │
                                            │ Optional fallback

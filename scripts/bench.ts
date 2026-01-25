@@ -11,7 +11,19 @@ const TIMEOUT_MS = Number.parseInt(process.env.BENCH_TIMEOUT_MS || '8000', 10);
 const BLOCK_OFFSET = Number.parseInt(process.env.BENCH_BLOCK_OFFSET || '1000', 10);
 const SEARCH_DEPTH = Number.parseInt(process.env.BENCH_BLOCK_SEARCH_DEPTH || '5', 10);
 const DELAY_MS = Number.parseInt(process.env.BENCH_DELAY_MS || '0', 10);
+const BENCH_METHODS = parseCsv(process.env.BENCH_METHODS || '');
+const BATCH_SIZES = parseCsvInt(process.env.BENCH_BATCH_SIZES || '1,5,10,25');
+const BATCH_SIZES_HEAVY = parseCsvInt(process.env.BENCH_BATCH_SIZES_HEAVY || '');
+const BATCH_METHODS = parseCsv(process.env.BENCH_BATCH_METHODS || 'eth_blockNumber');
+const BATCH_CHUNK_SIZE = Number.parseInt(process.env.BENCH_BATCH_CHUNK_SIZE || '1000', 10);
+const BENCH_RETRIES = Number.parseInt(process.env.BENCH_RETRIES || '0', 10);
 const OUTPUT_JSON = process.argv.includes('--json');
+const HEAVY_BATCH_METHODS = new Set(
+  parseCsv(
+    process.env.BENCH_BATCH_HEAVY_METHODS ||
+      'eth_getLogs,eth_getBlockByNumber,eth_getTransactionByBlockNumberAndIndex,trace_block,trace_transaction'
+  )
+);
 
 const DEFAULT_HEADERS: Record<string, string> = {
   Accept: 'application/json',
@@ -31,6 +43,10 @@ type BenchResult = {
   label: string;
   method: string;
   params: unknown[];
+  kind: 'single' | 'batch';
+  batchSize: number;
+  requestBytes: number;
+  batchChunks?: number;
   ok: number;
   errors: number;
   durationsMs: number[];
@@ -43,7 +59,7 @@ async function main() {
   const { blockHex, blockHash, txIndexHex, txHash } = await selectBlockAndTx();
   const logFilter = await selectLogFilter(blockHex);
 
-  const methods: { name: string; params: unknown[] }[] = [
+  let methods: { name: string; params: unknown[] }[] = [
     { name: 'eth_chainId', params: [] },
     { name: 'eth_blockNumber', params: [] },
     { name: 'eth_getBlockByNumber', params: [blockHex, false] },
@@ -56,12 +72,39 @@ async function main() {
     { name: 'trace_block', params: [blockHex] },
     { name: 'trace_transaction', params: [txHash] }
   ];
+  if (BENCH_METHODS.length > 0) {
+    methods = methods.filter((entry) => BENCH_METHODS.includes(entry.name));
+    if (methods.length === 0) {
+      throw new Error('BENCH_METHODS filtered out all methods');
+    }
+  }
 
   const results: BenchResult[] = [];
   for (const method of methods) {
     for (const endpoint of Object.values(endpoints)) {
       const result = await benchMethod(endpoint, method.name, method.params);
       results.push(result);
+    }
+  }
+
+  const methodParams = new Map<string, unknown[]>();
+  for (const entry of methods) {
+    if (!methodParams.has(entry.name)) {
+      methodParams.set(entry.name, entry.params);
+    }
+  }
+  for (const method of BATCH_METHODS) {
+    const params = methodParams.get(method);
+    if (!params) {
+      console.warn(`Skipping batch method ${method}: no params resolved`);
+      continue;
+    }
+    const sizes = HEAVY_BATCH_METHODS.has(method) && BATCH_SIZES_HEAVY.length > 0 ? BATCH_SIZES_HEAVY : BATCH_SIZES;
+    for (const size of sizes) {
+      for (const endpoint of Object.values(endpoints)) {
+        const result = await benchBatchMethod(endpoint, method, params, size);
+        results.push(result);
+      }
     }
   }
 
@@ -164,10 +207,14 @@ async function benchMethod(
   let ok = 0;
   let errors = 0;
   let sampleError: string | undefined;
+  const requestBytes = Buffer.byteLength(JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }), 'utf8');
 
   const run = async () => {
     const start = performance.now();
-    const result = await rpcCall(endpoint, method, params);
+    let result: RpcResponse = await rpcCall(endpoint, method, params);
+    for (let attempt = 0; attempt < BENCH_RETRIES && 'error' in result; attempt += 1) {
+      result = await rpcCall(endpoint, method, params);
+    }
     const duration = performance.now() - start;
     durationsMs.push(duration);
     if ('error' in result) {
@@ -182,13 +229,94 @@ async function benchMethod(
 
   await runPool(ITERATIONS, CONCURRENCY, run);
 
-  return { label: endpoint.label, method, params, ok, errors, durationsMs, sampleError };
+  return {
+    label: endpoint.label,
+    method,
+    params,
+    kind: 'single',
+    batchSize: 1,
+    requestBytes,
+    ok,
+    errors,
+    durationsMs,
+    sampleError
+  };
+}
+
+async function benchBatchMethod(
+  endpoint: { label: string; url: string; headers: Record<string, string> },
+  method: string,
+  params: unknown[],
+  batchSize: number
+): Promise<BenchResult> {
+  const durationsMs: number[] = [];
+  let ok = 0;
+  let errors = 0;
+  let sampleError: string | undefined;
+  const request = Array.from({ length: batchSize }, (_, idx) => ({
+    jsonrpc: '2.0',
+    id: idx + 1,
+    method,
+    params
+  }));
+  const requestBytes = Buffer.byteLength(JSON.stringify(request), 'utf8');
+
+  let batchChunks: number | undefined;
+  const run = async () => {
+    const start = performance.now();
+    let result: RpcResponse[] | RpcResponse = await rpcBatchCall(endpoint, request);
+    for (let attempt = 0; attempt < BENCH_RETRIES && 'error' in result; attempt += 1) {
+      result = await rpcBatchCall(endpoint, request);
+    }
+    if ('error' in result) {
+      if (BATCH_CHUNK_SIZE > 0 && batchSize > BATCH_CHUNK_SIZE) {
+        const chunked = await rpcBatchCallChunked(endpoint, request, BATCH_CHUNK_SIZE);
+        batchChunks = chunked.chunks;
+        result = chunked.responses;
+      }
+    }
+    const duration = performance.now() - start;
+    durationsMs.push(duration);
+    if ('error' in result) {
+      errors += batchSize;
+      if (!sampleError) {
+        sampleError = typeof result.error?.message === 'string' ? result.error?.message : 'rpc error';
+      }
+      return;
+    }
+    for (const entry of result) {
+      if (entry.error) {
+        errors += 1;
+        if (!sampleError) {
+          sampleError = typeof entry.error?.message === 'string' ? entry.error?.message : 'rpc error';
+        }
+      } else {
+        ok += 1;
+      }
+    }
+  };
+
+  await runPool(ITERATIONS, CONCURRENCY, run);
+
+  return {
+    label: endpoint.label,
+    method: `${method} (batch=${batchSize})`,
+    params,
+    kind: 'batch',
+    batchSize,
+    requestBytes,
+    batchChunks,
+    ok,
+    errors,
+    durationsMs,
+    sampleError
+  };
 }
 
 async function runPool(iterations: number, concurrency: number, task: () => Promise<void>) {
   let index = 0;
   const workers = Array.from({ length: concurrency }, async () => {
-    while (true) {
+    while (index < iterations) {
       const current = index;
       index += 1;
       if (current >= iterations) {
@@ -226,6 +354,49 @@ async function rpcCall(
   }
 }
 
+async function rpcBatchCall(
+  endpoint: { url: string; headers: Record<string, string> },
+  payload: Array<{ jsonrpc: string; id: number; method: string; params: unknown[] }>
+): Promise<RpcResponse[] | RpcResponse> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetch(endpoint.url, {
+      method: 'POST',
+      headers: endpoint.headers,
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+    const json = (await res.json()) as RpcResponse | RpcResponse[];
+    if (Array.isArray(json)) {
+      return json;
+    }
+    return { error: { code: -1, message: 'non-batch response' } };
+  } catch (err) {
+    return { error: { code: -1, message: err instanceof Error ? err.message : 'request failed' } };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function rpcBatchCallChunked(
+  endpoint: { url: string; headers: Record<string, string> },
+  payload: Array<{ jsonrpc: string; id: number; method: string; params: unknown[] }>,
+  chunkSize: number
+): Promise<{ responses: RpcResponse[]; chunks: number }> {
+  const responses: RpcResponse[] = [];
+  const total = payload.length;
+  const chunks = Math.ceil(total / chunkSize);
+  for (let i = 0; i < total; i += chunkSize) {
+    const slice = payload.slice(i, i + chunkSize);
+    const result = await rpcBatchCall(endpoint, slice);
+    if ('error' in result) {
+      return { responses: result, chunks };
+    }
+    responses.push(...result);
+  }
+  return { responses, chunks };
+}
 async function rpcResult(endpoint: { url: string; headers: Record<string, string> }, method: string, params: unknown[]) {
   const res = await rpcCall(endpoint, method, params);
   if (res.error) {
@@ -277,6 +448,11 @@ function toSummary(result: BenchResult) {
   return {
     target: result.label,
     method: result.method,
+    kind: result.kind,
+    batchSize: result.batchSize,
+    requestBytes: result.requestBytes,
+    batchChunks: result.batchChunks ?? null,
+    params: result.params,
     ok: result.ok,
     errors: result.errors,
     sampleError: result.sampleError || null,
@@ -314,6 +490,19 @@ function round(value: number) {
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parseCsv(value: string): string[] {
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+function parseCsvInt(value: string): number[] {
+  return parseCsv(value)
+    .map((entry) => Number.parseInt(entry, 10))
+    .filter((entry) => Number.isFinite(entry) && entry > 0);
 }
 
 main().catch((err) => {

@@ -4,6 +4,7 @@ Work style: telegraph; noun-phrases ok; drop grammar; min tokens.
 
 ## Agent Protocol
 - PRs: use `gh pr view/diff` (no URLs).
+- Reviews: use `REVIEW_PROMPT.md` and `sqd-portal-review` skill.
 - “Make a note” => edit AGENTS.md (shortcut; not a blocker). Ignore `CLAUDE.md`.
 - Need upstream file: stage in `/tmp/`, then cherry-pick; never overwrite tracked.
 - Bugs: add regression test when it fits.

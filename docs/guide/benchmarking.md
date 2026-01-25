@@ -22,6 +22,13 @@ npm run bench
 | `BENCH_CONCURRENCY` | `1` | Concurrent requests |
 | `BENCH_TIMEOUT_MS` | `8000` | Request timeout |
 | `BENCH_DELAY_MS` | `0` | Delay between requests |
+| `BENCH_BATCH_SIZES` | `1,5,10,25` | Batch sizes for batch tests |
+| `BENCH_BATCH_SIZES_HEAVY` | — | Optional batch sizes for heavy methods (logs/trace/block-by-number) |
+| `BENCH_BATCH_METHODS` | `eth_blockNumber` | Comma-separated methods to batch |
+| `BENCH_BATCH_HEAVY_METHODS` | `eth_getLogs,eth_getBlockByNumber,eth_getTransactionByBlockNumberAndIndex,trace_block,trace_transaction` | Comma-separated methods treated as heavy for batch sizing |
+| `BENCH_METHODS` | — | Comma-separated allowlist of methods to run |
+| `BENCH_BATCH_CHUNK_SIZE` | `1000` | Split oversized batches if upstream rejects large payloads |
+| `BENCH_RETRIES` | `0` | Retry count for transient failures |
 
 ## Optional Parameters
 
@@ -42,6 +49,19 @@ For CI/CD integration:
 ```bash
 npm run bench -- --json > results.json
 ```
+
+## Batch Example
+
+```bash
+BENCH_BATCH_SIZES=1,5,10,25 \
+BENCH_BATCH_METHODS=eth_blockNumber \
+npm run bench -- --json
+```
+
+## Latest Report
+
+The latest benchmark report is published in the docs:
+- `/benchmarks/` (charts + comparison tables)
 
 ## Example Output
 
