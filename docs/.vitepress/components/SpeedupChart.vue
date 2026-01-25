@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
-import { Chart, registerables } from 'chart.js';
-
-Chart.register(...registerables);
+import { ref, onMounted } from 'vue';
 
 const props = defineProps<{
   labels: string[];
@@ -10,34 +7,34 @@ const props = defineProps<{
 }>();
 
 const canvas = ref<HTMLCanvasElement | null>(null);
-let chart: Chart | null = null;
+const isClient = ref(false);
 
-const colors = computed(() => {
-  return props.speedups.map(s => s >= 1
+onMounted(async () => {
+  isClient.value = true;
+  if (!canvas.value) return;
+
+  const { Chart, registerables } = await import('chart.js');
+  Chart.register(...registerables);
+
+  const colors = props.speedups.map(s => s >= 1
     ? 'rgba(34, 197, 94, 0.8)'   // green for faster
     : 'rgba(239, 68, 68, 0.8)'   // red for slower
   );
-});
 
-const borderColors = computed(() => {
-  return props.speedups.map(s => s >= 1
+  const borderColors = props.speedups.map(s => s >= 1
     ? 'rgb(34, 197, 94)'
     : 'rgb(239, 68, 68)'
   );
-});
 
-onMounted(() => {
-  if (!canvas.value) return;
-
-  chart = new Chart(canvas.value, {
+  new Chart(canvas.value, {
     type: 'bar',
     data: {
       labels: props.labels,
       datasets: [{
         label: 'Speedup (RPC/Wrapper)',
         data: props.speedups,
-        backgroundColor: colors.value,
-        borderColor: borderColors.value,
+        backgroundColor: colors,
+        borderColor: borderColors,
         borderWidth: 1,
         borderRadius: 4,
       }]
@@ -103,7 +100,8 @@ onMounted(() => {
 
 <template>
   <div class="chart-container">
-    <canvas ref="canvas"></canvas>
+    <canvas v-if="isClient" ref="canvas"></canvas>
+    <div v-else class="chart-loading">Loading chart...</div>
   </div>
 </template>
 
@@ -117,5 +115,13 @@ onMounted(() => {
   background: var(--vp-c-bg-soft);
   border-radius: 12px;
   border: 1px solid var(--vp-c-divider);
+}
+
+.chart-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--vp-c-text-2);
 }
 </style>

@@ -1,8 +1,5 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { Chart, registerables } from 'chart.js';
-
-Chart.register(...registerables);
 
 const props = defineProps<{
   title: string;
@@ -13,12 +10,16 @@ const props = defineProps<{
 }>();
 
 const canvas = ref<HTMLCanvasElement | null>(null);
-let chart: Chart | null = null;
+const isClient = ref(false);
 
-onMounted(() => {
+onMounted(async () => {
+  isClient.value = true;
   if (!canvas.value) return;
 
-  chart = new Chart(canvas.value, {
+  const { Chart, registerables } = await import('chart.js');
+  Chart.register(...registerables);
+
+  new Chart(canvas.value, {
     type: 'bar',
     data: {
       labels: props.labels,
@@ -100,7 +101,8 @@ onMounted(() => {
 
 <template>
   <div class="chart-container">
-    <canvas ref="canvas"></canvas>
+    <canvas v-if="isClient" ref="canvas"></canvas>
+    <div v-else class="chart-loading">Loading chart...</div>
   </div>
 </template>
 
@@ -114,5 +116,13 @@ onMounted(() => {
   background: var(--vp-c-bg-soft);
   border-radius: 12px;
   border: 1px solid var(--vp-c-divider);
+}
+
+.chart-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--vp-c-text-2);
 }
 </style>
