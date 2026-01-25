@@ -1,8 +1,37 @@
 # Benchmarks
 
+This benchmark compares the SQD Portal RPC Wrapper against a reference RPC endpoint (Alchemy) to measure latency characteristics across different methods and batch sizes.
+
+## Key Findings
+
+::: tip Wrapper Strengths
+- **Batch requests**: Up to **41x faster** for large batches (10,000 requests) due to Portal's efficient bulk data retrieval
+- **Simple queries**: Comparable or faster for `eth_blockNumber`, `eth_getTransactionByHash`
+- **Cost efficiency**: Uses SQD Portal (free tier available) instead of paid RPC providers
+:::
+
+::: warning Trade-offs
+- **Single block lookups**: Methods requiring specific block data (`eth_getBlockByNumber`, `eth_getTransactionByBlockNumberAndIndex`) have higher latency due to Portal's query model optimized for ranges
+- **Trace methods**: Slightly slower for `trace_block` and `trace_transaction`
+:::
+
+### When to Use the Wrapper
+
+| Use Case | Recommendation |
+|----------|----------------|
+| Historical data indexing | **Wrapper** - batch queries are dramatically faster |
+| Real-time block monitoring | Upstream RPC or hybrid approach |
+| Transaction lookups by hash | **Wrapper** - comparable latency, lower cost |
+| Log queries across block ranges | **Wrapper** - efficient batch processing |
+| Single block by number | Upstream RPC for lowest latency |
+
+---
+
+## Detailed Results
+
 Generated: 2026-01-25 23:26:57 UTC
 
-## Summary
+### Single Request Latency
 
 Methods with successful measurements on both wrapper and reference RPC:
 
