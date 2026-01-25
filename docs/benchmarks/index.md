@@ -73,60 +73,57 @@ Note: some large batches were split into chunks due to upstream limits. The "chu
 
 ## Charts
 
-### Mean latency (ms)
+### Mean Latency by Method
 
-```mermaid
-xychart-beta
-  title "Mean latency by method"
-  x-axis ["eth_blockNumber", "eth_getBlockByHash", "eth_getBlockByNumber(fullTx=false)", "eth_getBlockByNumber(fullTx=true)", "eth_getLogs", "eth_getTransactionByBlockNumberAndIndex", "eth_getTransactionByHash", "eth_getTransactionReceipt", "trace_block", "trace_transaction"]
-  y-axis "ms"
-  bar "wrapper" [41.1, 48.97, 96.93, 101.69, 52.7, 92.75, 43.2, 45.92, 280.28, 51.11]
-  bar "rpc" [44.23, 42.9, 46.26, 54.52, 42.38, 44.16, 42.21, 40.55, 214.7, 44.62]
-```
+<LatencyChart
+  title="Mean Latency by Method"
+  :labels='["eth_blockNumber", "eth_getBlockByHash", "eth_getBlockByNumber (no tx)", "eth_getBlockByNumber (full tx)", "eth_getLogs", "eth_getTransactionByBlockNumberAndIndex", "eth_getTransactionByHash", "eth_getTransactionReceipt", "trace_block", "trace_transaction"]'
+  :wrapper-data="[41.1, 48.97, 96.93, 101.69, 52.7, 92.75, 43.2, 45.92, 280.28, 51.11]"
+  :rpc-data="[44.23, 42.9, 46.26, 54.52, 42.38, 44.16, 42.21, 40.55, 214.7, 44.62]"
+  y-axis-label="Mean Latency (ms)"
+/>
 
-### P95 latency (ms)
+### P95 Latency by Method
 
-```mermaid
-xychart-beta
-  title "P95 latency by method"
-  x-axis ["eth_blockNumber", "eth_getBlockByHash", "eth_getBlockByNumber(fullTx=false)", "eth_getBlockByNumber(fullTx=true)", "eth_getLogs", "eth_getTransactionByBlockNumberAndIndex", "eth_getTransactionByHash", "eth_getTransactionReceipt", "trace_block", "trace_transaction"]
-  y-axis "ms"
-  bar "wrapper" [65.64, 56.93, 153.64, 123.64, 62.38, 134.47, 47.64, 51.98, 347.17, 65.73]
-  bar "rpc" [58.61, 47.17, 61.84, 77.6, 48.64, 60.34, 51.6, 45.47, 275.3, 52.73]
-```
+<LatencyChart
+  title="P95 Latency by Method"
+  :labels='["eth_blockNumber", "eth_getBlockByHash", "eth_getBlockByNumber (no tx)", "eth_getBlockByNumber (full tx)", "eth_getLogs", "eth_getTransactionByBlockNumberAndIndex", "eth_getTransactionByHash", "eth_getTransactionReceipt", "trace_block", "trace_transaction"]'
+  :wrapper-data="[65.64, 56.93, 153.64, 123.64, 62.38, 134.47, 47.64, 51.98, 347.17, 65.73]"
+  :rpc-data="[58.61, 47.17, 61.84, 77.6, 48.64, 60.34, 51.6, 45.47, 275.3, 52.73]"
+  y-axis-label="P95 Latency (ms)"
+/>
 
-### Batch size vs mean latency (eth_blockNumber)
+### Relative Performance (Speedup)
 
-```mermaid
-xychart-beta
-  title "Batch size vs mean latency (eth_blockNumber)"
-  x-axis [1, 5, 10, 25, 1000, 10000]
-  y-axis "ms"
-  bar "wrapper" [47.27, 41.86, 41.85, 42.13, 47.46, 56.22]
-  bar "rpc" [43.47, 49.75, 50.1, 55.13, 231.21, 2563.68]
-```
+<SpeedupChart
+  :labels='["eth_blockNumber", "eth_getBlockByHash", "eth_getBlockByNumber (no tx)", "eth_getBlockByNumber (full tx)", "eth_getLogs", "eth_getTransactionByBlockNumberAndIndex", "eth_getTransactionByHash", "eth_getTransactionReceipt", "trace_block", "trace_transaction"]'
+  :speedups="[1.08, 0.88, 0.48, 0.54, 0.8, 0.48, 0.98, 0.88, 0.77, 0.87]"
+/>
 
-### Batch size vs mean latency (eth_getBlockByNumber)
+### Batch Size Scaling
 
-```mermaid
-xychart-beta
-  title "Batch size vs mean latency (eth_getBlockByNumber)"
-  x-axis [1, 5, 10, 25, 100]
-  y-axis "ms"
-  bar "wrapper" [102.55, 86.67, 88.65, 89.69, 98.06]
-  bar "rpc" [45.01, 53.24, 59.2, 74.35, 100.78]
-```
+The wrapper excels at large batch requests due to Portal's efficient data retrieval.
 
-### Batch size vs mean latency (eth_getLogs)
+<BatchChart
+  title="eth_blockNumber: Batch Size vs Latency"
+  :batch-sizes="[1, 5, 10, 25, 1000, 10000]"
+  :wrapper-data="[47.27, 41.86, 41.85, 42.13, 47.46, 56.22]"
+  :rpc-data="[43.47, 49.75, 50.1, 55.13, 231.21, 2563.68]"
+/>
 
-```mermaid
-xychart-beta
-  title "Batch size vs mean latency (eth_getLogs)"
-  x-axis [1, 5, 10, 25, 100]
-  y-axis "ms"
-  bar "wrapper" [55.88, 55.32, 52.27, 54.87, 62.73]
-  bar "rpc" [45.39, 55.74, 63.74, 61.72, 88.2]
-```
+<BatchChart
+  title="eth_getBlockByNumber: Batch Size vs Latency"
+  :batch-sizes="[1, 5, 10, 25, 100]"
+  :wrapper-data="[102.55, 86.67, 88.65, 89.69, 98.06]"
+  :rpc-data="[45.01, 53.24, 59.2, 74.35, 100.78]"
+/>
+
+<BatchChart
+  title="eth_getLogs: Batch Size vs Latency"
+  :batch-sizes="[1, 5, 10, 25, 100]"
+  :wrapper-data="[55.88, 55.32, 52.27, 54.87, 62.73]"
+  :rpc-data="[45.39, 55.74, 63.74, 61.72, 88.2]"
+/>
 
 
 ## Run Parameters
