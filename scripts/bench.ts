@@ -10,6 +10,7 @@ const CONCURRENCY = Number.parseInt(process.env.BENCH_CONCURRENCY || '1', 10);
 const TIMEOUT_MS = Number.parseInt(process.env.BENCH_TIMEOUT_MS || '8000', 10);
 const BLOCK_OFFSET = Number.parseInt(process.env.BENCH_BLOCK_OFFSET || '1000', 10);
 const SEARCH_DEPTH = Number.parseInt(process.env.BENCH_BLOCK_SEARCH_DEPTH || '5', 10);
+const DELAY_MS = Number.parseInt(process.env.BENCH_DELAY_MS || '0', 10);
 const OUTPUT_JSON = process.argv.includes('--json');
 
 const DEFAULT_HEADERS: Record<string, string> = {
@@ -194,6 +195,9 @@ async function runPool(iterations: number, concurrency: number, task: () => Prom
         return;
       }
       await task();
+      if (DELAY_MS > 0) {
+        await sleep(DELAY_MS);
+      }
     }
   });
   await Promise.all(workers);
@@ -306,6 +310,10 @@ function printSummary(results: BenchResult[]) {
 
 function round(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 main().catch((err) => {

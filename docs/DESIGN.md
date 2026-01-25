@@ -139,6 +139,8 @@ ASCII flow:
 - Parse filter, enforce address/topic constraints
 - Support blockHash filter: proxy upstream when configured
 - start_block clamp, range limit
+- Optional open-ended stream when `PORTAL_OPEN_ENDED_STREAM` and `toBlock` omitted
+- Optional `includeAllBlocks` passthrough when `PORTAL_INCLUDE_ALL_BLOCKS`
 - Stream blocks -> logs -> convert
 
 ### trace_block

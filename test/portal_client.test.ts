@@ -69,7 +69,7 @@ describe('PortalClient', () => {
       return new Response(JSON.stringify({ number: 7, hash: '0xabc' }), { status: 200 });
     };
     const client = new PortalClient(cfg, { fetchImpl, logger: { info: vi.fn(), warn } });
-    const result = await client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', true, 'finalized');
+    const result = await client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', true);
     expect(result.head.number).toBe(7);
     expect(result.finalizedAvailable).toBe(false);
     expect(warn).toHaveBeenCalled();
@@ -119,6 +119,33 @@ describe('PortalClient', () => {
       toBlock: 1
     });
     expect(blocks).toHaveLength(1);
+  });
+
+  it('falls back from finalized stream', async () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const fetchImpl = vi.fn().mockImplementation((input: unknown) => {
+      const url = typeof input === 'string' ? input : String(input);
+      if (url.endsWith('/finalized-stream')) {
+        return new Response('missing', { status: 404 });
+      }
+      if (url.endsWith('/stream')) {
+        const ndjson = '{"header":{"number":4}}\n';
+        return streamResponse(ndjson, 200);
+      }
+      return new Response(JSON.stringify({ number: 1, hash: '0xabc' }), { status: 200 });
+    });
+    const client = new PortalClient(cfg, { fetchImpl, logger: { info: vi.fn(), warn: vi.fn() } });
+    const blocks = await client.streamBlocks('https://portal.sqd.dev/datasets/ethereum-mainnet', true, {
+      type: 'evm',
+      fromBlock: 1,
+      toBlock: 1
+    });
+    expect(blocks).toHaveLength(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
   it('returns empty on 204', async () => {
@@ -181,6 +208,45 @@ describe('PortalClient', () => {
     await expect(
       client.streamBlocks('https://portal.sqd.dev/datasets/ethereum-mainnet', false, { type: 'evm', fromBlock: 1, toBlock: 1 })
     ).rejects.toThrow('invalid portal response');
+  });
+
+  it('retries portal stream when fields are rejected', async () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const bodies: Array<Record<string, unknown>> = [];
+    let call = 0;
+    const fetchImpl = async (_input: unknown, init?: RequestInit) => {
+      if (init?.body) {
+        bodies.push(JSON.parse(init.body as string) as Record<string, unknown>);
+      }
+      call += 1;
+      if (call === 1) {
+        return new Response('Bad request: unknown field `withdrawalsRoot`', { status: 400 });
+      }
+      return streamResponse('{"header":{"number":1}}\n', 200);
+    };
+    const client = new PortalClient(cfg, { fetchImpl });
+    const baseUrl = 'https://portal.sqd.dev/datasets/ethereum-mainnet';
+    const request = {
+      type: 'evm' as const,
+      fromBlock: 1,
+      toBlock: 1,
+      fields: { block: { number: true, withdrawalsRoot: true } }
+    };
+    const blocks = await client.streamBlocks(baseUrl, false, request);
+    expect(blocks).toHaveLength(1);
+
+    const first = bodies[0] as { fields?: { block?: Record<string, unknown> } };
+    const second = bodies[1] as { fields?: { block?: Record<string, unknown> } };
+    expect(first.fields?.block?.withdrawalsRoot).toBe(true);
+    expect(second.fields?.block?.withdrawalsRoot).toBeUndefined();
+
+    await client.streamBlocks(baseUrl, false, request);
+    const third = bodies[2] as { fields?: { block?: Record<string, unknown> } };
+    expect(third.fields?.block?.withdrawalsRoot).toBeUndefined();
   });
 
   it('maps unauthorized errors', async () => {
@@ -446,9 +512,7 @@ describe('PortalClient', () => {
     });
     const fetchImpl = async () => new Response('missing', { status: 404 });
     const client = new PortalClient(cfg, { fetchImpl });
-    await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false, '', undefined)).rejects.toThrow(
-      'block not found'
-    );
+    await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false)).rejects.toThrow('block not found');
   });
 
   it('propagates fetch errors', async () => {
@@ -524,8 +588,25 @@ describe('PortalClient', () => {
     const info = vi.fn();
     const fetchImpl = async () => new Response(JSON.stringify({ number: 1, hash: '0xabc' }), { status: 200 });
     const client = new PortalClient(cfg, { fetchImpl, logger: { info } });
-    await client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false, '');
+    await client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false);
     expect(info).toHaveBeenCalled();
+  });
+
+  it('propagates request id header', async () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    let seenRequestId: string | undefined;
+    const fetchImpl = async (_input: unknown, init?: RequestInit) => {
+      const headers = init?.headers as Record<string, string> | undefined;
+      seenRequestId = headers?.['X-Request-Id'];
+      return new Response(JSON.stringify({ number: 1, hash: '0xabc' }), { status: 200 });
+    };
+    const client = new PortalClient(cfg, { fetchImpl });
+    await client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false, undefined, 'req-123');
+    expect(seenRequestId).toBe('req-123');
   });
 
   it('normalizes fetch errors to rpc error', async () => {
@@ -538,9 +619,7 @@ describe('PortalClient', () => {
       throw new Error('boom');
     };
     const client = new PortalClient(cfg, { fetchImpl });
-    await expect(
-      client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false, '', undefined)
-    ).rejects.toThrow('boom');
+    await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false)).rejects.toThrow('boom');
   });
 
   it('caches metadata within ttl', async () => {
@@ -609,8 +688,10 @@ describe('PortalClient', () => {
     const baseUrl = 'https://portal.sqd.dev/datasets/ethereum-mainnet';
     const first = await client.getMetadata(baseUrl);
     const second = await client.getMetadata(baseUrl);
+    await new Promise((resolve) => setImmediate(resolve));
     expect(first.start_block).toBe(5);
     expect(second.start_block).toBe(5);
+    expect(calls).toBe(2);
     expect(warn).toHaveBeenCalled();
   });
 
@@ -632,6 +713,7 @@ describe('PortalClient', () => {
       throw 'boom';
     };
     const result = await client.getMetadata(baseUrl);
+    await new Promise((resolve) => setImmediate(resolve));
     expect(result.start_block).toBe(9);
     expect(warn).toHaveBeenCalled();
   });
@@ -663,9 +745,9 @@ describe('PortalClient', () => {
     });
     const fetchImpl = vi.fn().mockResolvedValue(new Response('boom', { status: 500 }));
     const client = new PortalClient(cfg, { fetchImpl, logger: { info: vi.fn(), warn: vi.fn() } });
-    await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false, '')).rejects.toThrow('server error');
-    await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false, '')).rejects.toThrow('server error');
-    await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false, '')).rejects.toThrow(
+    await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false)).rejects.toThrow('server error');
+    await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false)).rejects.toThrow('server error');
+    await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false)).rejects.toThrow(
       'portal circuit open'
     );
     expect(fetchImpl).toHaveBeenCalledTimes(2);
@@ -686,13 +768,38 @@ describe('PortalClient', () => {
       .mockResolvedValueOnce(new Response('boom', { status: 500 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ number: 1, hash: '0xabc' }), { status: 200 }));
     const client = new PortalClient(cfg, { fetchImpl, logger: { info: vi.fn(), warn: vi.fn() } });
-    await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false, '')).rejects.toThrow('server error');
-    await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false, '')).rejects.toThrow(
+    await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false)).rejects.toThrow('server error');
+    await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false)).rejects.toThrow(
       'portal circuit open'
     );
     await vi.advanceTimersByTimeAsync(2);
-    const result = await client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false, '');
+    const result = await client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false);
     expect(result.head.number).toBe(1);
+    vi.useRealTimers();
+  });
+
+  it('reopens circuit when half-open request fails', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2024-01-01T00:00:00Z'));
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1',
+      PORTAL_CIRCUIT_BREAKER_THRESHOLD: '1',
+      PORTAL_CIRCUIT_BREAKER_RESET_MS: '1'
+    });
+    const fetchImpl = vi.fn().mockResolvedValue(new Response('boom', { status: 500 }));
+    const client = new PortalClient(cfg, { fetchImpl, logger: { info: vi.fn(), warn: vi.fn() } });
+    await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false)).rejects.toThrow('server error');
+    await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false)).rejects.toThrow(
+      'portal circuit open'
+    );
+    await vi.advanceTimersByTimeAsync(2);
+    await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false)).rejects.toThrow('server error');
+    await expect(client.fetchHead('https://portal.sqd.dev/datasets/ethereum-mainnet', false)).rejects.toThrow(
+      'portal circuit open'
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
     vi.useRealTimers();
   });
 });

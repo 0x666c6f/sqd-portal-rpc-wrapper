@@ -45,4 +45,5 @@ Optional:
 - `BENCH_BLOCK_OFFSET=1000`
 - `BENCH_BLOCK_SEARCH_DEPTH=5`
 - `BENCH_TIMEOUT_MS=8000`
+- `BENCH_DELAY_MS=0`
 - `--json` for machine output

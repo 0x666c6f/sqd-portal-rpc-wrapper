@@ -105,6 +105,7 @@ export function convertTxToRpc(tx: PortalTransaction, header: PortalBlockHeader)
   if (tx.r !== undefined) result.r = tx.r;
   if (tx.s !== undefined) result.s = tx.s;
   if (tx.accessList !== undefined) result.accessList = tx.accessList;
+  if (tx.authorizationList !== undefined) result.authorizationList = tx.authorizationList;
   const maxFeePerBlobGas = quantityHexIfSet(tx.maxFeePerBlobGas);
   if (maxFeePerBlobGas !== undefined) {
     result.maxFeePerBlobGas = maxFeePerBlobGas;
@@ -126,6 +127,7 @@ export function convertLogToRpc(log: PortalLog, block: PortalBlockResponse): Rec
     address: log.address,
     data: log.data,
     topics: log.topics,
+    // Portal serves historical/finalized data only; removed is always false.
     removed: false
   };
 }
@@ -268,6 +270,7 @@ function normalizeNonce(value: unknown): string {
     return hex;
   }
   const raw = hex.slice(2);
+  // EVM RPC expects 8-byte (16 hex chars) nonce width.
   return `0x${raw.padStart(16, '0')}`;
 }
 

@@ -1,7 +1,7 @@
 export interface PortalRequest {
   type: 'evm';
   fromBlock: number;
-  toBlock: number;
+  toBlock?: number;
   parentBlockHash?: string;
   includeAllBlocks?: boolean;
   fields?: FieldSelection;
@@ -115,6 +115,7 @@ export interface PortalTransaction {
   yParity?: unknown;
   chainId?: unknown;
   accessList?: unknown;
+  authorizationList?: unknown;
   maxFeePerBlobGas?: unknown;
   blobVersionedHashes?: unknown;
 }
@@ -250,6 +251,7 @@ const allTransactionFields = {
   yParity: true,
   chainId: true,
   accessList: true,
+  authorizationList: true,
   maxFeePerBlobGas: true,
   blobVersionedHashes: true
 };

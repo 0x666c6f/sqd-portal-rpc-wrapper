@@ -94,6 +94,25 @@ describe('config', () => {
     expect(cfg.upstreamRpcUrlMap).toEqual({ '1': 'https://rpc' });
   });
 
+  it('validates upstream rpc urls', () => {
+    expect(() =>
+      loadConfig({
+        SERVICE_MODE: 'single',
+        PORTAL_DATASET: 'ethereum-mainnet',
+        PORTAL_CHAIN_ID: '1',
+        UPSTREAM_RPC_URL: 'ftp://example.com'
+      })
+    ).toThrow('UPSTREAM_RPC_URL');
+    expect(() =>
+      loadConfig({
+        SERVICE_MODE: 'single',
+        PORTAL_DATASET: 'ethereum-mainnet',
+        PORTAL_CHAIN_ID: '1',
+        UPSTREAM_RPC_URL_MAP: '{"1":"not a url"}'
+      })
+    ).toThrow('UPSTREAM_RPC_URL_MAP');
+  });
+
   it('parses handler timeout and circuit breaker settings', () => {
     const cfg = loadConfig({
       SERVICE_MODE: 'single',
@@ -101,11 +120,38 @@ describe('config', () => {
       PORTAL_CHAIN_ID: '1',
       HANDLER_TIMEOUT_MS: '1234',
       PORTAL_CIRCUIT_BREAKER_THRESHOLD: '2',
-      PORTAL_CIRCUIT_BREAKER_RESET_MS: '5000'
+      PORTAL_CIRCUIT_BREAKER_RESET_MS: '5000',
+      PORTAL_INCLUDE_ALL_BLOCKS: 'true',
+      PORTAL_OPEN_ENDED_STREAM: '1'
     });
     expect(cfg.handlerTimeoutMs).toBe(1234);
     expect(cfg.portalCircuitBreakerThreshold).toBe(2);
     expect(cfg.portalCircuitBreakerResetMs).toBe(5000);
+    expect(cfg.portalIncludeAllBlocks).toBe(true);
+    expect(cfg.portalOpenEndedStream).toBe(true);
+  });
+
+  it('parses boolean false values', () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1',
+      PORTAL_INCLUDE_ALL_BLOCKS: 'false',
+      PORTAL_OPEN_ENDED_STREAM: '0'
+    });
+    expect(cfg.portalIncludeAllBlocks).toBe(false);
+    expect(cfg.portalOpenEndedStream).toBe(false);
+  });
+
+  it('rejects invalid boolean values', () => {
+    expect(() =>
+      loadConfig({
+        SERVICE_MODE: 'single',
+        PORTAL_DATASET: 'ethereum-mainnet',
+        PORTAL_CHAIN_ID: '1',
+        PORTAL_OPEN_ENDED_STREAM: 'maybe'
+      })
+    ).toThrow('invalid boolean');
   });
 
   it('requires chain id when dataset map has multiple entries', () => {

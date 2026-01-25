@@ -16,18 +16,19 @@ export async function parseBlockNumber(
   baseUrl: string,
   value: unknown,
   config: Config,
-  traceparent?: string
+  traceparent?: string,
+  requestId?: string
 ): Promise<ParsedBlockTag> {
   if (typeof value === 'string') {
     switch (value) {
       case '':
       case 'latest': {
-        const { head } = await portal.fetchHead(baseUrl, false, '', traceparent);
+        const { head } = await portal.fetchHead(baseUrl, false, traceparent, requestId);
         return { number: head.number, useFinalized: false };
       }
       case 'finalized':
       case 'safe': {
-        const { head, finalizedAvailable } = await portal.fetchHead(baseUrl, true, value, traceparent);
+        const { head, finalizedAvailable } = await portal.fetchHead(baseUrl, true, traceparent, requestId);
         return { number: head.number, useFinalized: finalizedAvailable };
       }
       case 'pending':
@@ -99,6 +100,7 @@ export type ParsedLogFilter =
   | {
       fromBlock: number;
       toBlock: number;
+      toBlockDefaulted: boolean;
       useFinalized: boolean;
       range: number;
       logFilter: {
@@ -115,7 +117,8 @@ export async function parseLogFilter(
   baseUrl: string,
   filter: Record<string, unknown>,
   config: Config,
-  traceparent?: string
+  traceparent?: string,
+  requestId?: string
 ): Promise<ParsedLogFilter> {
   let fromBlock: ParsedBlockTag | null = null;
   let toBlock: ParsedBlockTag | null = null;
@@ -138,17 +141,19 @@ export async function parseLogFilter(
 
   if (!blockHash) {
     if (filter.fromBlock !== undefined) {
-      fromBlock = await parseBlockNumber(portal, baseUrl, filter.fromBlock, config, traceparent);
+      fromBlock = await parseBlockNumber(portal, baseUrl, filter.fromBlock, config, traceparent, requestId);
     }
     if (filter.toBlock !== undefined) {
-      toBlock = await parseBlockNumber(portal, baseUrl, filter.toBlock, config, traceparent);
+      toBlock = await parseBlockNumber(portal, baseUrl, filter.toBlock, config, traceparent, requestId);
     }
+    let toBlockDefaulted = false;
     if (!toBlock) {
+      toBlockDefaulted = true;
       if (fromBlock?.useFinalized) {
-        const { head, finalizedAvailable } = await portal.fetchHead(baseUrl, true, 'finalized', traceparent);
-        toBlock = { number: head.number, useFinalized: finalizedAvailable };
+        const { head } = await portal.fetchHead(baseUrl, false, traceparent, requestId);
+        toBlock = { number: head.number, useFinalized: false };
       } else {
-        const { head } = await portal.fetchHead(baseUrl, false, '', traceparent);
+        const { head } = await portal.fetchHead(baseUrl, false, traceparent, requestId);
         toBlock = { number: head.number, useFinalized: false };
       }
     }
@@ -166,6 +171,7 @@ export async function parseLogFilter(
     return {
       fromBlock: fromBlock.number,
       toBlock: toBlock.number,
+      toBlockDefaulted,
       useFinalized,
       range: blockRange,
       logFilter

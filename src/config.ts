@@ -30,6 +30,8 @@ export interface Config {
   handlerTimeoutMs: number;
   portalCircuitBreakerThreshold: number;
   portalCircuitBreakerResetMs: number;
+  portalIncludeAllBlocks: boolean;
+  portalOpenEndedStream: boolean;
 }
 
 const DEFAULT_LISTEN = ':8080';
@@ -37,7 +39,7 @@ const DEFAULT_PORTAL_BASE = 'https://portal.sqd.dev/datasets';
 const DEFAULT_HTTP_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_LOG_BLOCK_RANGE = 1_000_000;
 const DEFAULT_MAX_LOG_ADDRESSES = 1000;
-const DEFAULT_MAX_BLOCK_NUMBER = BigInt(1) << BigInt(62);
+const DEFAULT_MAX_BLOCK_NUMBER = BigInt(Number.MAX_SAFE_INTEGER);
 const DEFAULT_MAX_CONCURRENCY = 128;
 const DEFAULT_MAX_NDJSON_LINE_BYTES = 8 * 1024 * 1024;
 const DEFAULT_MAX_NDJSON_BYTES = 64 * 1024 * 1024;
@@ -81,6 +83,9 @@ export function loadConfig(env = process.env): Config {
   const wrapperApiKey = env.WRAPPER_API_KEY;
   const wrapperApiKeyHeader = env.WRAPPER_API_KEY_HEADER || 'X-API-Key';
   const upstreamRpcUrl = env.UPSTREAM_RPC_URL;
+  if (upstreamRpcUrl) {
+    validateUrl(upstreamRpcUrl, 'UPSTREAM_RPC_URL');
+  }
   const upstreamRpcUrlMap = parseUrlMap(env.UPSTREAM_RPC_URL_MAP);
   const portalCircuitBreakerThreshold = parseNumber(
     env.PORTAL_CIRCUIT_BREAKER_THRESHOLD,
@@ -90,6 +95,8 @@ export function loadConfig(env = process.env): Config {
     env.PORTAL_CIRCUIT_BREAKER_RESET_MS,
     DEFAULT_CIRCUIT_BREAKER_RESET_MS
   );
+  const portalIncludeAllBlocks = parseBoolean(env.PORTAL_INCLUDE_ALL_BLOCKS, false);
+  const portalOpenEndedStream = parseBoolean(env.PORTAL_OPEN_ENDED_STREAM, false);
 
   if (serviceMode === 'single') {
     if (!portalDataset && Object.keys(portalDatasetMap).length === 0) {
@@ -126,7 +133,9 @@ export function loadConfig(env = process.env): Config {
     upstreamRpcUrlMap,
     handlerTimeoutMs,
     portalCircuitBreakerThreshold,
-    portalCircuitBreakerResetMs
+    portalCircuitBreakerResetMs,
+    portalIncludeAllBlocks,
+    portalOpenEndedStream
   };
 }
 
@@ -173,6 +182,7 @@ function parseUrlMap(raw?: string): Record<string, string> {
     if (typeof value !== 'string' || value.trim() === '') {
       continue;
     }
+    validateUrl(value, `UPSTREAM_RPC_URL_MAP[${key}]`);
     result[String(key)] = value;
   }
   return result;
@@ -200,9 +210,35 @@ function parseNumber(raw: string | undefined, fallback: number): number {
   return value;
 }
 
+function parseBoolean(raw: string | undefined, fallback: boolean): boolean {
+  if (raw === undefined) {
+    return fallback;
+  }
+  const value = raw.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(value)) {
+    return true;
+  }
+  if (['0', 'false', 'no', 'off'].includes(value)) {
+    return false;
+  }
+  throw new Error(`invalid boolean: ${raw}`);
+}
+
 function parseBigInt(raw: string | undefined, fallback: bigint): bigint {
   if (!raw) {
     return fallback;
   }
   return BigInt(raw);
+}
+
+function validateUrl(raw: string, label: string) {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch (err) {
+    throw new Error(`${label} must be a valid URL`);
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error(`${label} must use http or https`);
+  }
 }

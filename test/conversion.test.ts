@@ -178,11 +178,13 @@ describe('conversion', () => {
     const withBlob: PortalTransaction = {
       ...tx,
       accessList: [],
+      authorizationList: [],
       maxFeePerBlobGas: '0x9',
       blobVersionedHashes: ['0x' + 'ab'.repeat(32)]
     };
     const result = convertTxToRpc(withBlob, header);
     expect(result.accessList).toEqual([]);
+    expect(result.authorizationList).toEqual([]);
     expect(result.maxFeePerBlobGas).toBe('0x9');
     expect(result.blobVersionedHashes).toEqual(['0x' + 'ab'.repeat(32)]);
   });

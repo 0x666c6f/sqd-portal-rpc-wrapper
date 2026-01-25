@@ -109,7 +109,8 @@ export async function buildServer(config: Config): Promise<FastifyInstance> {
   server.get('/healthz', async () => ({ status: 'ok' }));
   server.get('/readyz', async (req, reply) => {
     try {
-      await checkPortalReady(config, portal);
+      const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined;
+      await checkPortalReady(config, portal, requestId);
       reply.send({ status: 'ready' });
     } catch (err) {
       req.log.warn({ error: String(err) }, 'portal readiness check failed');
@@ -418,7 +419,7 @@ async function prefetchMetadata(server: FastifyInstance, portal: PortalClient, c
   );
 }
 
-async function checkPortalReady(config: Config, portal: PortalClient) {
+async function checkPortalReady(config: Config, portal: PortalClient, requestId?: string) {
   const chainDatasets = resolveChainDatasets(config);
   const entries = Object.entries(chainDatasets);
   if (entries.length === 0) {
@@ -427,7 +428,7 @@ async function checkPortalReady(config: Config, portal: PortalClient) {
   await Promise.all(
     entries.map(async ([_chainId, dataset]) => {
       const baseUrl = portal.buildDatasetBaseUrl(dataset);
-      await portal.fetchHead(baseUrl, false, '');
+      await portal.fetchHead(baseUrl, false, undefined, requestId);
     })
   );
 }
@@ -439,27 +440,29 @@ async function buildCapabilities(
 ) {
   const chainDatasets = resolveChainDatasets(config);
   const chains: Record<string, { dataset: string; aliases: string[]; startBlock?: number; realTime: boolean }> = {};
-  for (const [chainId, dataset] of Object.entries(chainDatasets)) {
-    let aliases: string[] = [];
-    let startBlock: number | undefined;
-    let realTime = false;
-    try {
-      const baseUrl = portal.buildDatasetBaseUrl(dataset);
-      const metadata = await portal.getMetadata(baseUrl);
-      aliases = Array.isArray(metadata.aliases) ? metadata.aliases : [];
-      startBlock = typeof metadata.start_block === 'number' ? metadata.start_block : undefined;
-      realTime = resolveRealtimeEnabled(metadata, config.portalRealtimeMode);
-      metrics.portal_realtime_enabled.labels(chainId).set(Number(realTime));
-    } catch (err) {
-      logger.warn(
-        { chainId: Number(chainId), dataset, error: String(err) },
-        'portal metadata fetch failed'
-      );
-      realTime = resolveRealtimeEnabled(null, config.portalRealtimeMode);
-      metrics.portal_realtime_enabled.labels(chainId).set(Number(realTime));
-    }
-    chains[chainId] = { dataset, aliases, startBlock, realTime };
-  }
+  await Promise.all(
+    Object.entries(chainDatasets).map(async ([chainId, dataset]) => {
+      let aliases: string[] = [];
+      let startBlock: number | undefined;
+      let realTime = false;
+      try {
+        const baseUrl = portal.buildDatasetBaseUrl(dataset);
+        const metadata = await portal.getMetadata(baseUrl);
+        aliases = Array.isArray(metadata.aliases) ? metadata.aliases : [];
+        startBlock = typeof metadata.start_block === 'number' ? metadata.start_block : undefined;
+        realTime = resolveRealtimeEnabled(metadata, config.portalRealtimeMode);
+        metrics.portal_realtime_enabled.labels(chainId).set(Number(realTime));
+      } catch (err) {
+        logger.warn(
+          { chainId: Number(chainId), dataset, error: String(err) },
+          'portal metadata fetch failed'
+        );
+        realTime = resolveRealtimeEnabled(null, config.portalRealtimeMode);
+        metrics.portal_realtime_enabled.labels(chainId).set(Number(realTime));
+      }
+      chains[chainId] = { dataset, aliases, startBlock, realTime };
+    })
+  );
 
   return {
     service: { name: 'sqd-portal-rpc-wrapper', version: process.env.npm_package_version || '0.1.0' },

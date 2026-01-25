@@ -67,13 +67,15 @@ curl -s -X POST http://localhost:8080/v1/evm/1 \
 | `PORTAL_METADATA_TTL_MS` | `300000` | Metadata cache TTL |
 | `PORTAL_CIRCUIT_BREAKER_THRESHOLD` | `0` | Disable with 0; open circuit after N failures |
 | `PORTAL_CIRCUIT_BREAKER_RESET_MS` | `30000` | Circuit reset window |
+| `PORTAL_INCLUDE_ALL_BLOCKS` | `false` | Include empty blocks in portal stream |
+| `PORTAL_OPEN_ENDED_STREAM` | `false` | Omit `toBlock` when client omits it |
 | `WRAPPER_API_KEY` | | Optional incoming auth |
 | `WRAPPER_API_KEY_HEADER` | `X-API-Key` | |
 | `UPSTREAM_RPC_URL` | | Optional JSON-RPC fallback URL |
 | `UPSTREAM_RPC_URL_MAP` | | JSON object chainId->URL (overrides `UPSTREAM_RPC_URL`) |
 | `MAX_LOG_BLOCK_RANGE` | `1000000` | |
 | `MAX_LOG_ADDRESSES` | `1000` | |
-| `MAX_BLOCK_NUMBER` | `2^62` | Uses BigInt for validation |
+| `MAX_BLOCK_NUMBER` | `2^53-1` | Uses safe integer for validation |
 | `HTTP_TIMEOUT` | `60000` | ms |
 | `MAX_CONCURRENT_REQUESTS` | `128` | 503 on overload |
 | `MAX_NDJSON_LINE_BYTES` | `8388608` | |

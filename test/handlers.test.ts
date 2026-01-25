@@ -338,6 +338,33 @@ describe('handlers', () => {
     expect(response!.result).toEqual([]);
   });
 
+  it('omits toBlock when open-ended stream enabled', async () => {
+    const configOpen = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1',
+      PORTAL_OPEN_ENDED_STREAM: 'true',
+      PORTAL_INCLUDE_ALL_BLOCKS: 'true'
+    });
+    let seen: Record<string, unknown> | null = null;
+    const portalOpen = {
+      fetchHead: async () => ({ head: { number: 5, hash: '0xabc' }, finalizedAvailable: false }),
+      streamBlocks: async (_baseUrl: string, _finalized: boolean, request: Record<string, unknown>) => {
+        seen = request;
+        return [];
+      },
+      getMetadata: async () => ({ dataset: 'ethereum-mainnet', start_block: 0, real_time: true }),
+      buildDatasetBaseUrl: (dataset: string) => `https://portal/${dataset}`
+    };
+    await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_getLogs', params: [{ fromBlock: '0x1' }] },
+      { config: configOpen, portal: portalOpen as any, chainId: 1, requestId: 'test' }
+    );
+    expect(seen).toBeTruthy();
+    expect(Object.prototype.hasOwnProperty.call(seen, 'toBlock')).toBe(false);
+    expect(seen?.includeAllBlocks).toBe(true);
+  });
+
   it('returns empty logs when block has no logs', async () => {
     const portalNoLogs = {
       ...portalWithData,

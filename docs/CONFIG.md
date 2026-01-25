@@ -15,11 +15,13 @@
 - `PORTAL_METADATA_TTL_MS`: metadata cache TTL, default `300000`
 - `PORTAL_CIRCUIT_BREAKER_THRESHOLD`: open circuit after N failures (0 disables), default `0`
 - `PORTAL_CIRCUIT_BREAKER_RESET_MS`: circuit reset window, default `30000`
+- `PORTAL_INCLUDE_ALL_BLOCKS`: include empty blocks in portal stream, default `false`
+- `PORTAL_OPEN_ENDED_STREAM`: omit `toBlock` when client omits it, default `false`
 
 ## Limits
 - `MAX_LOG_BLOCK_RANGE`: default `1000000`
 - `MAX_LOG_ADDRESSES`: default `1000`
-- `MAX_BLOCK_NUMBER`: default `2^62`
+- `MAX_BLOCK_NUMBER`: default `2^53-1` (Number.MAX_SAFE_INTEGER)
 - `HTTP_TIMEOUT`: ms, default `60000`
 - `MAX_CONCURRENT_REQUESTS`: default `128`
 - `MAX_NDJSON_LINE_BYTES`: default `8388608`

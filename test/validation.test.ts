@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { assertArray, assertObject, parseBlockNumber, parseLogFilter, parseTransactionIndex } from '../src/rpc/validation';
 import { loadConfig } from '../src/config';
 
@@ -90,7 +90,11 @@ describe('validation', () => {
       { blockHash: '0x' + 'aa'.repeat(32) },
       config
     );
-    expect(result.blockHash).toBe('0x' + 'aa'.repeat(32));
+    if ('blockHash' in result) {
+      expect(result.blockHash).toBe('0x' + 'aa'.repeat(32));
+    } else {
+      throw new Error('expected blockHash filter');
+    }
   });
 
   it('rejects blockHash with range params', async () => {
@@ -258,7 +262,11 @@ describe('validation', () => {
       MAX_LOG_BLOCK_RANGE: '1'
     });
     const result = await parseLogFilter(portal as any, 'https://portal', { fromBlock: '0x1', toBlock: '0x2' }, limited);
-    expect(result.range).toBe(2);
+    if ('range' in result) {
+      expect(result.range).toBe(2);
+    } else {
+      throw new Error('expected range filter');
+    }
   });
 
   it('rejects invalid address filter types', async () => {
@@ -276,12 +284,10 @@ describe('validation', () => {
     ).rejects.toThrow('invalid address filter');
   });
 
-  it('uses finalized head when fromBlock is finalized', async () => {
+  it('defaults to non-finalized when fromBlock is finalized', async () => {
+    const fetchHead = vi.fn().mockResolvedValue({ head: { number: 10, hash: '0xabc' }, finalizedAvailable: true });
     const portalRange = {
-      fetchHead: async (_baseUrl: string, finalized: boolean) => ({
-        head: { number: 10, hash: '0xabc' },
-        finalizedAvailable: finalized
-      })
+      fetchHead
     };
     const result = await parseLogFilter(
       portalRange as any,
@@ -289,7 +295,13 @@ describe('validation', () => {
       { fromBlock: 'finalized' },
       config
     );
-    expect(result.useFinalized).toBe(true);
+    if ('useFinalized' in result) {
+      expect(result.useFinalized).toBe(false);
+      expect(result.toBlockDefaulted).toBe(true);
+    } else {
+      throw new Error('expected range filter');
+    }
+    expect(fetchHead.mock.calls.some((call) => call[1] === false)).toBe(true);
   });
 
   it('rejects fromBlock greater than toBlock', async () => {
