@@ -88,13 +88,36 @@ describe('handlers', () => {
   });
 
   it('proxies pending blocks to upstream', async () => {
-    const upstream = { call: vi.fn().mockResolvedValue({ number: '0x1' }) };
+    const configWithUpstream = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1',
+      UPSTREAM_RPC_URL: 'https://upstream.rpc'
+    });
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { number: '0x1' } }))
+    );
+    const upstream = new UpstreamRpcClient(configWithUpstream, { fetchImpl });
     const { response } = await handleJsonRpc(
       { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: ['pending', false] },
-      { config, portal: portal as any, chainId: 1, requestId: 'test', upstream: upstream as any }
+      { config: configWithUpstream, portal: portal as any, chainId: 1, requestId: 'test', upstream }
     );
-    expect(upstream.call).toHaveBeenCalled();
     expect(response!.result).toEqual({ number: '0x1' });
+  });
+
+  it('rejects pending blocks when upstream has no url', async () => {
+    const configNoUrl = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const upstream = new UpstreamRpcClient(configNoUrl);
+    const { response, httpStatus } = await handleJsonRpc(
+      { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: ['pending', false] },
+      { config: configNoUrl, portal: portal as any, chainId: 1, requestId: 'test', upstream }
+    );
+    expect(httpStatus).toBe(400);
+    expect(response!.error?.code).toBe(-32602);
   });
 
   it('returns null for block before start_block', async () => {
@@ -128,7 +151,16 @@ describe('handlers', () => {
   });
 
   it('proxies blockHash log filters to upstream', async () => {
-    const upstream = { call: vi.fn().mockResolvedValue([{ logIndex: '0x0' }]) };
+    const configWithUpstream = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1',
+      UPSTREAM_RPC_URL: 'https://upstream.rpc'
+    });
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: [{ logIndex: '0x0' }] }))
+    );
+    const upstream = new UpstreamRpcClient(configWithUpstream, { fetchImpl });
     const { response } = await handleJsonRpc(
       {
         jsonrpc: '2.0',
@@ -136,9 +168,8 @@ describe('handlers', () => {
         method: 'eth_getLogs',
         params: [{ blockHash: '0x' + 'aa'.repeat(32) }]
       },
-      { config, portal: portalWithData as any, chainId: 1, requestId: 'test', upstream: upstream as any }
+      { config: configWithUpstream, portal: portalWithData as any, chainId: 1, requestId: 'test', upstream }
     );
-    expect(upstream.call).toHaveBeenCalled();
     expect(response!.result).toEqual([{ logIndex: '0x0' }]);
   });
 

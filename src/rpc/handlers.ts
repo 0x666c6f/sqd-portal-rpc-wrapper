@@ -278,7 +278,7 @@ function isBlockHashParam(value: unknown): value is string {
 }
 
 function proxyUpstream(request: JsonRpcRequest, ctx: HandlerContext, message: string): Promise<unknown> {
-  if (!ctx.upstream) {
+  if (!ctx.upstream || !ctx.upstream.resolveUrl(ctx.chainId)) {
     throw invalidParams(message);
   }
   return ctx.upstream.call(request, ctx.chainId, ctx.traceparent);
