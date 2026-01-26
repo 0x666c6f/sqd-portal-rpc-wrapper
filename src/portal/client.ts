@@ -117,6 +117,7 @@ export class PortalClient {
         const body = await readBody(resp);
         const unknownField = extractUnknownField(body.text);
         if (unknownField) {
+          metrics.portal_unsupported_fields_total.labels(unknownField).inc();
           if (!isNegotiableField(unknownField)) {
             throw portalUnsupportedFieldError(unknownField);
           }
@@ -447,6 +448,7 @@ function mapPortalStatusError(status: number, body: { text: string; json?: unkno
     case 409:
       return conflictError(extractPreviousBlocks(body.json));
     case 429:
+      metrics.rate_limit_total.labels('portal').inc();
       return rateLimitError('Too Many Requests');
     case 503:
       return unavailableError('unavailable');

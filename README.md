@@ -152,13 +152,22 @@ All metrics are exposed at `GET /metrics` in Prometheus format.
 | Metric | Labels | Description |
 |--------|--------|-------------|
 | `requests_total` | `method`, `chainId`, `status` | Total JSON-RPC requests |
+| `rpc_duration_seconds` | `method` | JSON-RPC handler duration |
+| `rpc_timeouts_total` | `method` | JSON-RPC handler timeouts |
+| `batch_requests_total` | `count` | Batch requests by size |
+| `batch_items_total` | `status` | Batch items processed |
 | `portal_requests_total` | `endpoint`, `status` | Portal HTTP requests |
 | `portal_latency_seconds` | `endpoint` | Portal request latency histogram |
 | `portal_metadata_fetch_total` | `status` | Metadata endpoint fetches |
 | `portal_conflict_total` | `chainId` | Portal 409 conflict responses |
 | `portal_realtime_enabled` | `chainId` | Realtime availability gauge |
 | `ndjson_lines_total` | — | NDJSON lines parsed |
+| `ndjson_bytes_total` | — | NDJSON bytes parsed |
 | `response_bytes_total` | `method`, `chainId` | Response payload bytes |
+| `portal_unsupported_fields_total` | `field` | Portal unsupported fields |
+| `upstream_requests_total` | `status` | Upstream JSON-RPC requests |
+| `upstream_latency_seconds` | `endpoint` | Upstream request latency histogram |
+| `rate_limit_total` | `source` | Rate limit errors by source |
 | `errors_total` | `category` | Errors by category |
 | `finalized_fallback_total` | — | Finalized→non-finalized fallbacks |
 

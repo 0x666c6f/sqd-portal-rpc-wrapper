@@ -1,6 +1,7 @@
 import fastify, { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { gunzip } from 'node:zlib';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import { promisify } from 'node:util';
 import { Config } from './config';
 import { metrics, metricsPayload } from './metrics';
@@ -193,6 +194,9 @@ async function handleRpcRequest(
     const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : randomUUID();
     const payload = req.body;
     const parsed = parseJsonRpcPayload(payload);
+    if (parsed.isBatch) {
+      metrics.batch_requests_total.labels(String(parsed.items.length)).inc();
+    }
     const requestCache = new Map<string, Promise<unknown>>();
     const startBlockCache = new Map<string, Promise<number | undefined>>();
     const portalHeaders: PortalStreamHeaders = {};
@@ -218,6 +222,8 @@ async function handleRpcRequest(
       }
       const request = item.request!;
       const hasId = 'id' in request;
+      const methodLabel = request.method || 'unknown';
+      const startedRequest = performance.now();
       const { response, httpStatus } = await handleJsonRpc(request, {
         config,
         portal,
@@ -231,16 +237,28 @@ async function handleRpcRequest(
         requestTimeoutMs: config.handlerTimeoutMs,
         startBlockCache
       });
+      metrics.rpc_duration_seconds.labels(methodLabel).observe((performance.now() - startedRequest) / 1000);
       if (hasId) {
         responses.push(response);
         maxStatus = Math.max(maxStatus, httpStatus);
       }
 
-      const methodLabel = request.method || 'unknown';
       metrics.requests_total.labels(methodLabel, String(chainId), String(httpStatus)).inc();
       if (hasId && response.error) {
         const errorCategory = toCategory(response.error.code);
         metrics.errors_total.labels(errorCategory).inc();
+      }
+      if (parsed.isBatch) {
+        const status = response.error ? 'error' : 'ok';
+        metrics.batch_items_total.labels(status).inc();
+      }
+    }
+
+    if (parsed.isBatch) {
+      for (const item of parsed.items) {
+        if (item.error) {
+          metrics.batch_items_total.labels('error').inc();
+        }
       }
     }
 

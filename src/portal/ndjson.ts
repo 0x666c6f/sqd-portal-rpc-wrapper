@@ -21,6 +21,7 @@ export async function parseNdjsonStream(
   for await (const chunk of stream) {
     const chunkBuf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
     totalBytes += chunkBuf.length;
+    metrics.ndjson_bytes_total.inc(chunkBuf.length);
     if (totalBytes > limits.maxBytes) {
       throw serverError(`ndjson payload exceeds max bytes (${limits.maxBytes})`);
     }

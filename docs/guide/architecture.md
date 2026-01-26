@@ -130,8 +130,17 @@ When open, requests fail fast with 503 instead of waiting for Portal timeouts.
 ### Metrics (Prometheus)
 
 - `requests_total{method,chainId,status}` - JSON-RPC requests
+- `rpc_duration_seconds{method}` - JSON-RPC handler duration
+- `rpc_timeouts_total{method}` - JSON-RPC handler timeouts
+- `batch_requests_total{count}` - Batch requests by size
+- `batch_items_total{status}` - Batch items processed
 - `portal_requests_total{endpoint,status}` - Portal HTTP requests
 - `portal_latency_seconds{endpoint}` - Portal latency histogram
+- `upstream_requests_total{status}` - Upstream JSON-RPC requests
+- `upstream_latency_seconds{endpoint}` - Upstream latency histogram
+- `portal_unsupported_fields_total{field}` - Portal unsupported fields
+- `rate_limit_total{source}` - Rate limit errors by source
+- `ndjson_bytes_total` - NDJSON bytes parsed
 - `errors_total{category}` - Errors by category
 - `finalized_fallback_total` - Finalized endpoint fallbacks
 

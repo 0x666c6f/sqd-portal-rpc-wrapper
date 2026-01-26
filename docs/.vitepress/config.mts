@@ -44,13 +44,14 @@ export default withMermaid(
               { text: 'Networks', link: '/guide/networks' }
             ]
           },
-          {
-            text: 'Development',
-            items: [
-              { text: 'Local Setup', link: '/guide/development' },
-              { text: 'Benchmarking', link: '/guide/benchmarking' }
-            ]
-          }
+        {
+          text: 'Development',
+          items: [
+            { text: 'Local Setup', link: '/guide/development' },
+            { text: 'Observability', link: '/guide/observability' },
+            { text: 'Benchmarking', link: '/guide/benchmarking' }
+          ]
+        }
         ],
         '/api/': [
           {

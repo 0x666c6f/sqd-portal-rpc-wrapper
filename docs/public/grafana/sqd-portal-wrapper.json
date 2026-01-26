@@ -1,0 +1,207 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "legend": { "displayMode": "list", "placement": "right" } },
+      "targets": [
+        {
+          "expr": "sum(rate(requests_total[5m])) by (method)",
+          "legendFormat": "{{method}}",
+          "refId": "A"
+        }
+      ],
+      "title": "RPC Requests / sec by method",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "options": { "legend": { "displayMode": "list", "placement": "right" } },
+      "targets": [
+        {
+          "expr": "sum(rate(errors_total[5m])) by (category)",
+          "legendFormat": "{{category}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Errors / sec by category",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 3,
+      "options": { "legend": { "displayMode": "list", "placement": "right" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(rpc_duration_seconds_bucket[5m])) by (le, method))",
+          "legendFormat": "{{method}}",
+          "refId": "A"
+        }
+      ],
+      "title": "RPC p95 latency (s)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 4,
+      "options": { "legend": { "displayMode": "list", "placement": "right" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(portal_latency_seconds_bucket[5m])) by (le, endpoint))",
+          "legendFormat": "{{endpoint}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Portal p95 latency (s)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "id": 5,
+      "options": { "legend": { "displayMode": "list", "placement": "right" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(upstream_latency_seconds_bucket[5m])) by (le, endpoint))",
+          "legendFormat": "{{endpoint}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Upstream p95 latency (s)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "id": 6,
+      "options": { "legend": { "displayMode": "list", "placement": "right" } },
+      "targets": [
+        {
+          "expr": "sum(rate(batch_requests_total[5m])) by (count)",
+          "legendFormat": "{{count}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Batch requests / sec by size",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "Bps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "id": 7,
+      "options": { "legend": { "displayMode": "list", "placement": "right" } },
+      "targets": [
+        {
+          "expr": "rate(ndjson_bytes_total[5m])",
+          "legendFormat": "bytes/sec",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(ndjson_lines_total[5m])",
+          "legendFormat": "lines/sec",
+          "refId": "B"
+        }
+      ],
+      "title": "NDJSON throughput",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "id": 8,
+      "options": { "legend": { "displayMode": "list", "placement": "right" } },
+      "targets": [
+        {
+          "expr": "sum(rate(rate_limit_total[5m])) by (source)",
+          "legendFormat": "{{source}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Rate limits / sec by source",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+      "id": 9,
+      "options": { "legend": { "displayMode": "list", "placement": "right" } },
+      "targets": [
+        {
+          "expr": "sum(rate(rpc_timeouts_total[5m])) by (method)",
+          "legendFormat": "{{method}}",
+          "refId": "A"
+        }
+      ],
+      "title": "RPC timeouts / sec",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+      "id": 10,
+      "options": { "legend": { "displayMode": "list", "placement": "right" } },
+      "targets": [
+        {
+          "expr": "sum(rate(portal_unsupported_fields_total[5m])) by (field)",
+          "legendFormat": "{{field}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Portal unsupported fields / sec",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["sqd", "portal", "rpc"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": true, "text": "Prometheus", "value": "Prometheus" },
+        "name": "DS_PROMETHEUS",
+        "query": "prometheus",
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": { "from": "now-15m", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "SQD Portal RPC Wrapper",
+  "uid": "sqd-portal-wrapper",
+  "version": 1
+}

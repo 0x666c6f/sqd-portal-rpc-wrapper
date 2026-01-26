@@ -34,6 +34,9 @@ export async function handleJsonRpc(
     return { response: successResponse(id, result), httpStatus: 200 };
   } catch (err) {
     const rpcError = err instanceof RpcError ? err : normalizeError(err);
+    if (rpcError.message === 'request timeout') {
+      metrics.rpc_timeouts_total.labels(request.method || 'unknown').inc();
+    }
     if (rpcError.category === 'conflict') {
       metrics.portal_conflict_total.labels(String(ctx.chainId)).inc();
       const previousBlocks = rpcError.data?.previousBlocks;

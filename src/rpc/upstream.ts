@@ -1,6 +1,8 @@
+import { performance } from 'node:perf_hooks';
 import { Config } from '../config';
 import { JsonRpcRequest } from '../jsonrpc';
 import { RpcError, ErrorCategory, serverError } from '../errors';
+import { metrics } from '../metrics';
 
 export interface UpstreamRpcClientOptions {
   fetchImpl?: typeof fetch;
@@ -34,6 +36,7 @@ export class UpstreamRpcClient {
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    const start = performance.now();
     const headers: Record<string, string> = {
       Accept: 'application/json',
       'Content-Type': 'application/json'
@@ -58,6 +61,9 @@ export class UpstreamRpcClient {
         body: JSON.stringify(payload),
         signal: controller.signal
       });
+      const elapsed = (performance.now() - start) / 1000;
+      metrics.upstream_requests_total.labels(String(resp.status)).inc();
+      metrics.upstream_latency_seconds.labels('upstream').observe(elapsed);
       const text = await resp.text();
       const parsed = text ? JSON.parse(text) : null;
       const response = Array.isArray(parsed) ? parsed[0] : parsed;
@@ -80,6 +86,7 @@ export class UpstreamRpcClient {
       return result;
     } catch (err) {
       clearTimeout(timeout);
+      metrics.upstream_requests_total.labels('0').inc();
       if (err instanceof RpcError) {
         throw err;
       }
@@ -93,6 +100,9 @@ export class UpstreamRpcClient {
 function rpcErrorFromUpstream(code: number, message: string, data?: Record<string, unknown>): RpcError {
   const category = categoryForCode(code);
   const httpStatus = httpStatusForCategory(category);
+  if (category === 'rate_limit') {
+    metrics.rate_limit_total.labels('upstream').inc();
+  }
   return new RpcError({ message, code, httpStatus, category, data });
 }
 

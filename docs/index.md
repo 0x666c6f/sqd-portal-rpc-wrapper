@@ -71,3 +71,8 @@ curl -s -X POST http://localhost:8080 \
 See the latest performance report and charts:
 - [Benchmarks](/benchmarks/)
 - [How to run benchmarks](/guide/benchmarking)
+
+## Observability
+
+Grafana dashboard + metrics guide:
+- [Observability](/guide/observability)
