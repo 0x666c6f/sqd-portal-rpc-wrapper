@@ -1,4 +1,4 @@
-# Portal Team Deep Dive: SQD Portal RPC Wrapper
+# Deep Dive: SQD Portal RPC Wrapper
 
 Date: 2026-01-26
 Presenter: <your name>

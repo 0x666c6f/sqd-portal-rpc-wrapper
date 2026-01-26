@@ -90,7 +90,7 @@ export default withMermaid(
           {
             text: 'Presentations',
             items: [
-              { text: 'Portal Team Deep Dive', link: '/presentations/portal-team-deep-dive' }
+              { text: 'Deep Dive', link: '/presentations/deep-dive' }
             ]
           }
         ]

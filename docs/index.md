@@ -82,4 +82,4 @@ Grafana dashboard + metrics guide:
 
 ## Presentations
 
-- [Portal Team Deep Dive](/presentations/portal-team-deep-dive)
+- [Deep Dive](/presentations/deep-dive)
