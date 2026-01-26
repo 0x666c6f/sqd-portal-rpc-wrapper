@@ -1,7 +1,7 @@
 # Deep Dive: SQD Portal RPC Wrapper
 
 Date: 2026-01-26
-Presenter: <your name>
+Presenter: your name
 Repo: sqd-portal-rpc-wrapper
 
 Notes:
