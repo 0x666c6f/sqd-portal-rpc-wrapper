@@ -73,6 +73,57 @@ Routing behavior:
 - Upstream calls require `UPSTREAM_METHODS_ENABLED=true` and a configured URL.
 - Pending or blockHash filters may proxy upstream when enabled.
 
+## Portal Usage Strategy
+
+Historical (default):
+- All Portal requests are bounded with `fromBlock` and `toBlock`.
+- Single-block queries become range queries with `fromBlock=toBlock`.
+- No open-ended streaming; avoids unbounded responses.
+- Optional `PORTAL_INCLUDE_ALL_BLOCKS=true` includes empty blocks in responses.
+
+Realtime:
+- Enabled only when Portal metadata advertises realtime.
+- `PORTAL_REALTIME_MODE` controls enforcement:
+  - `disabled`: never use realtime streams.
+  - `auto`: use realtime when available.
+  - `required`: fail if realtime is not advertised.
+- Finalized stream fallback:
+  - If `finalized-stream` returns 404, fall back to non-finalized stream and emit metrics.
+
+Finality resolution:
+- `latest` uses non-finalized head (`/head`).
+- `safe` and `finalized` use finalized head when available.
+- `eth_getLogs` with missing `toBlock` uses non-finalized head to avoid empty finalized ranges.
+
+## Portal Endpoints Used
+
+- `GET /metadata` for dataset info (aliases, start_block, real_time).
+- `GET /head` for non-finalized head.
+- `GET /finalized-head` for finalized head.
+- `POST /stream` for historical data ranges.
+- `POST /finalized-stream` for finalized ranges.
+
+## Method to Portal Mapping
+
+| JSON-RPC method | Portal request | Notes |
+| --- | --- | --- |
+| eth_blockNumber | /head | returns current head number |
+| eth_getBlockByNumber | /stream | range query for one block |
+| eth_getTransactionByBlockNumberAndIndex | /stream | pulls block + tx list, resolves index |
+| eth_getLogs | /stream | range query with log filters |
+| trace_block | /stream | range query with trace fields |
+
+## JSON-RPC Support Meaning
+
+What “supported” means in this wrapper:
+- JSON-RPC 2.0 shape enforced (`jsonrpc`, `id`, `result`/`error`).
+- Notification handling: requests without `id` return no response.
+- Batch handling: each item validated and responded independently.
+- Strict parameter validation; errors mapped to standard JSON-RPC codes.
+- Hex quantity normalization in responses.
+- Required fields always present; missing required Portal fields are hard errors.
+- Unsupported methods return `-32601` (method not supported).
+
 ## Data Mapping and Field Negotiation
 
 - Portal blocks/logs/traces are mapped to JSON-RPC objects with required fields.
