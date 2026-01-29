@@ -1,63 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { loadConfig } from '../src/config';
-import { coalesceGetBlockByNumber } from '../src/rpc/batch';
+import { coalesceBatchRequests } from '../src/rpc/batch';
 import type { ParsedJsonRpcItem } from '../src/jsonrpc';
 import type { PortalClient } from '../src/portal/client';
+import { makeBlock, makePortal } from './batch.helpers';
 
-const baseHeader = (number: number) => ({
-  number,
-  hash: `0x${String(number).padStart(64, '0')}`,
-  parentHash: '0x' + '22'.repeat(32),
-  timestamp: 1000,
-  miner: '0x' + '33'.repeat(20),
-  gasUsed: 21000,
-  gasLimit: 30_000_000,
-  nonce: 1,
-  difficulty: 1,
-  totalDifficulty: 1,
-  size: 500,
-  stateRoot: '0x' + '44'.repeat(32),
-  transactionsRoot: '0x' + '55'.repeat(32),
-  receiptsRoot: '0x' + '66'.repeat(32),
-  logsBloom: '0x' + '00'.repeat(256),
-  extraData: '0x',
-  mixHash: '0x' + '77'.repeat(32),
-  sha3Uncles: '0x' + '88'.repeat(32)
-});
-
-const makeBlock = (number: number, fullTx = false) => ({
-  header: baseHeader(number),
-  transactions: fullTx
-    ? [
-        {
-          transactionIndex: 0,
-          hash: `0xtx${number}`,
-          from: '0x' + '99'.repeat(20),
-          to: '0x' + 'aa'.repeat(20),
-          value: 1,
-          input: '0x',
-          nonce: 1,
-          gas: 21_000,
-          type: 0
-        }
-      ]
-    : [{ hash: `0xtx${number}`, transactionIndex: 0 }]
-});
-
-function makePortal(overrides: Record<string, unknown> = {}): PortalClient {
-  return {
-    buildDatasetBaseUrl: () => 'http://portal',
-    getMetadata: async () => ({ dataset: 'ethereum-mainnet', real_time: true, start_block: 0 }),
-    streamBlocks: async () => [],
-    fetchHead: async () => ({ head: { number: 5, hash: '0x' + '11'.repeat(32) }, finalizedAvailable: true }),
-    ...overrides
-  } as unknown as PortalClient;
-}
-
-describe('coalesceGetBlockByNumber', () => {
+describe('coalesceBatchRequests (block)', () => {
   it('returns empty when dataset is unresolved', async () => {
     const config = loadConfig({ SERVICE_MODE: 'multi', PORTAL_USE_DEFAULT_DATASETS: 'false' });
-    const results = await coalesceGetBlockByNumber([], {
+    const results = await coalesceBatchRequests([], {
       config,
       portal: {} as PortalClient,
       chainId: 1,
@@ -81,7 +32,7 @@ describe('coalesceGetBlockByNumber', () => {
     const items: ParsedJsonRpcItem[] = [
       { request: { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: ['0x1', false] } }
     ];
-    const results = await coalesceGetBlockByNumber(items, {
+    const results = await coalesceBatchRequests(items, {
       config,
       portal,
       chainId: 1,
@@ -105,7 +56,7 @@ describe('coalesceGetBlockByNumber', () => {
       { request: { jsonrpc: '2.0', id: 3, method: 'eth_getBlockByNumber', params: ['pending'] } },
       { request: { jsonrpc: '2.0', id: 4, method: 'eth_getBlockByNumber', params: ['0x1', 'nope'] } }
     ];
-    const results = await coalesceGetBlockByNumber(items, {
+    const results = await coalesceBatchRequests(items, {
       config,
       portal,
       chainId: 1,
@@ -127,7 +78,7 @@ describe('coalesceGetBlockByNumber', () => {
     const items: ParsedJsonRpcItem[] = [
       { request: { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: ['0xzz', false] } }
     ];
-    const results = await coalesceGetBlockByNumber(items, {
+    const results = await coalesceBatchRequests(items, {
       config,
       portal,
       chainId: 1,
@@ -150,7 +101,7 @@ describe('coalesceGetBlockByNumber', () => {
     const items: ParsedJsonRpcItem[] = [
       { request: { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: ['latest', false] } }
     ];
-    const results = await coalesceGetBlockByNumber(items, {
+    const results = await coalesceBatchRequests(items, {
       config,
       portal,
       chainId: 1,
@@ -176,7 +127,7 @@ describe('coalesceGetBlockByNumber', () => {
       { request: { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: ['0x5', false] } },
       { request: { jsonrpc: '2.0', id: 2, method: 'eth_getBlockByNumber', params: ['0xa', false] } }
     ];
-    const results = await coalesceGetBlockByNumber(items, {
+    const results = await coalesceBatchRequests(items, {
       config,
       portal,
       chainId: 1,
@@ -200,7 +151,7 @@ describe('coalesceGetBlockByNumber', () => {
     const items: ParsedJsonRpcItem[] = [
       { request: { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: ['0x5', false] } }
     ];
-    const results = await coalesceGetBlockByNumber(items, {
+    const results = await coalesceBatchRequests(items, {
       config,
       portal,
       chainId: 1,
@@ -232,7 +183,7 @@ describe('coalesceGetBlockByNumber', () => {
       { request: { jsonrpc: '2.0', id: 3, method: 'eth_getBlockByNumber', params: [6, false] } },
       { request: { jsonrpc: '2.0', id: 4, method: 'eth_getBlockByNumber', params: ['finalized', true] } }
     ];
-    const results = await coalesceGetBlockByNumber(items, {
+    const results = await coalesceBatchRequests(items, {
       config,
       portal,
       chainId: 1,
@@ -241,5 +192,71 @@ describe('coalesceGetBlockByNumber', () => {
     expect(fetchHead).toHaveBeenCalledTimes(2);
     expect(results.get(2)?.response.result).toBeNull();
     expect(results.get(3)?.response.result).toBeTruthy();
+  });
+
+  it('coalesces contiguous segments across gaps', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const calls: Array<{ fromBlock: number; toBlock: number }> = [];
+    const portal = makePortal({
+      streamBlocks: async (_base: string, _finalized: boolean, req: { fromBlock: number; toBlock: number }) => {
+        calls.push({ fromBlock: req.fromBlock, toBlock: req.toBlock });
+        const blocks = [];
+        for (let n = req.fromBlock; n <= req.toBlock; n += 1) {
+          blocks.push(makeBlock(n));
+        }
+        return blocks;
+      }
+    });
+    const items: ParsedJsonRpcItem[] = [
+      { request: { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: ['0x5', false] } },
+      { request: { jsonrpc: '2.0', id: 2, method: 'eth_getBlockByNumber', params: ['0x6', false] } },
+      { request: { jsonrpc: '2.0', id: 3, method: 'eth_getBlockByNumber', params: ['0x8', false] } }
+    ];
+    const results = await coalesceBatchRequests(items, {
+      config,
+      portal,
+      chainId: 1,
+      requestId: 'req'
+    });
+    expect(calls).toEqual([
+      { fromBlock: 5, toBlock: 6 },
+      { fromBlock: 8, toBlock: 8 }
+    ]);
+    expect(results.get(0)?.response.result).toBeTruthy();
+    expect(results.get(1)?.response.result).toBeTruthy();
+    expect(results.get(2)?.response.result).toBeTruthy();
+  });
+
+  it('reuses full transaction stream for hash-only blocks', async () => {
+    const config = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const calls: Array<{ fullTx: boolean }> = [];
+    const portal = makePortal({
+      streamBlocks: async (_base: string, _finalized: boolean, req: { fields: { transaction: Record<string, boolean> } }) => {
+        calls.push({ fullTx: Boolean(req.fields.transaction.input) });
+        return [makeBlock(5, true)];
+      }
+    });
+    const items: ParsedJsonRpcItem[] = [
+      { request: { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: ['0x5', true] } },
+      { request: { jsonrpc: '2.0', id: 2, method: 'eth_getBlockByNumber', params: ['0x5', false] } }
+    ];
+    const results = await coalesceBatchRequests(items, {
+      config,
+      portal,
+      chainId: 1,
+      requestId: 'req'
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.fullTx).toBe(true);
+    const hashOnly = results.get(1)?.response.result as { transactions?: string[] };
+    expect(hashOnly.transactions).toEqual(['0xtx5']);
   });
 });

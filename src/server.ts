@@ -9,7 +9,7 @@ import { PortalClient, normalizePortalBaseUrl } from './portal/client';
 import type { PortalStreamHeaders } from './portal/client';
 import { parseJsonRpcPayload, JsonRpcResponse } from './jsonrpc';
 import { handleJsonRpc } from './rpc/handlers';
-import { coalesceGetBlockByNumber } from './rpc/batch';
+import { coalesceBatchRequests } from './rpc/batch';
 import { UpstreamRpcClient } from './rpc/upstream';
 import { ConcurrencyLimiter } from './util/concurrency';
 import { normalizeError, unauthorizedError, overloadError, RpcError, invalidParams, invalidRequest, parseError } from './errors';
@@ -213,7 +213,7 @@ async function handleRpcRequest(
     const responses: JsonRpcResponse[] = [];
     let maxStatus = 200;
     const coalesced = parsed.isBatch
-      ? await coalesceGetBlockByNumber(parsed.items, {
+      ? await coalesceBatchRequests(parsed.items, {
           config,
           portal,
           upstream,
