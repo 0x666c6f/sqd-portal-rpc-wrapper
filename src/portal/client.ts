@@ -144,13 +144,91 @@ export class PortalClient {
         return [];
       }
 
-      return parseNdjsonStream(body, {
+      const blocks = await parseNdjsonStream(body, {
         maxLineBytes: this.maxNdjsonLineBytes,
         maxBytes: this.maxNdjsonBytes
       });
+      return this.ensureCompleteRange(url, effectiveRequest, blocks, traceparent, onHeaders, requestId);
     }
 
     throw serverError('portal field negotiation failed');
+  }
+
+  private async ensureCompleteRange(
+    url: string,
+    request: PortalRequest,
+    blocks: PortalBlockResponse[],
+    traceparent?: string,
+    onHeaders?: (headers: PortalStreamHeaders) => void,
+    requestId?: string
+  ): Promise<PortalBlockResponse[]> {
+    if (typeof request.toBlock !== 'number') {
+      return blocks;
+    }
+    const bounded = filterBlocksInRange(blocks, request.fromBlock, request.toBlock);
+    const last = lastBlockNumber(bounded);
+    if (last === undefined || last >= request.toBlock) {
+      return bounded;
+    }
+    const enforceContinuity = !request.logs || request.includeAllBlocks === true;
+    if (!enforceContinuity) {
+      return bounded;
+    }
+    const collected = [...bounded];
+    let nextFrom = last + 1;
+    let nextLast = last;
+    while (nextLast < request.toBlock) {
+      const nextRequest: PortalRequest = { ...request, fromBlock: nextFrom, toBlock: request.toBlock };
+      const nextBlocks = await this.streamSegment(url, nextRequest, traceparent, onHeaders, requestId);
+      const nextBounded = filterBlocksInRange(nextBlocks, nextFrom, request.toBlock);
+      const lastInNext = lastBlockNumber(nextBounded);
+      if (lastInNext === undefined || lastInNext <= nextLast) {
+        this.logger?.warn?.(
+          { endpoint: endpointLabel(url), fromBlock: nextFrom, toBlock: request.toBlock },
+          'portal stream interrupted'
+        );
+        throw unavailableError('portal stream interrupted');
+      }
+      collected.push(...nextBounded);
+      nextLast = lastInNext;
+      nextFrom = nextLast + 1;
+    }
+    return collected;
+  }
+
+  private async streamSegment(
+    url: string,
+    request: PortalRequest,
+    traceparent?: string,
+    onHeaders?: (headers: PortalStreamHeaders) => void,
+    requestId?: string
+  ): Promise<PortalBlockResponse[]> {
+    const resp = await this.request(
+      url,
+      'POST',
+      'application/x-ndjson',
+      JSON.stringify(request),
+      traceparent,
+      requestId
+    );
+
+    if (resp.status === 204) {
+      onHeaders?.(streamHeaders(resp));
+      return [];
+    }
+
+    if (resp.status !== 200) {
+      throw mapPortalStatusError(resp.status, await readBody(resp));
+    }
+
+    onHeaders?.(streamHeaders(resp));
+    if (!resp.body) {
+      return [];
+    }
+    return parseNdjsonStream(resp.body, {
+      maxLineBytes: this.maxNdjsonLineBytes,
+      maxBytes: this.maxNdjsonBytes
+    });
   }
 
   async getMetadata(baseUrl: string, traceparent?: string, requestId?: string): Promise<PortalMetadataResponse> {
@@ -464,6 +542,17 @@ function streamHeaders(resp: Response): PortalStreamHeaders {
     finalizedHeadNumber: number || undefined,
     finalizedHeadHash: hash || undefined
   };
+}
+
+function filterBlocksInRange(blocks: PortalBlockResponse[], fromBlock: number, toBlock: number): PortalBlockResponse[] {
+  return blocks.filter((block) => block.header.number >= fromBlock && block.header.number <= toBlock);
+}
+
+function lastBlockNumber(blocks: PortalBlockResponse[]): number | undefined {
+  if (blocks.length === 0) {
+    return undefined;
+  }
+  return blocks[blocks.length - 1]?.header.number;
 }
 
 function extractPreviousBlocks(payload: unknown): unknown[] | undefined {

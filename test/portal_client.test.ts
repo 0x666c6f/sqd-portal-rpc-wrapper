@@ -84,7 +84,7 @@ describe('PortalClient', () => {
     const fetchImpl = async (input: unknown) => {
       const url = typeof input === 'string' ? input : String(input);
       if (url.endsWith('/stream')) {
-        const ndjson = '{"header":{"number":1}}\n{"header":{"number":2}}\n';
+        const ndjson = '{"header":{"number":1}}\n';
         return streamResponse(ndjson, 200);
       }
       return new Response(JSON.stringify({ number: 1, hash: '0xabc' }), { status: 200 });
@@ -95,7 +95,7 @@ describe('PortalClient', () => {
       fromBlock: 1,
       toBlock: 1
     });
-    expect(blocks).toHaveLength(2);
+    expect(blocks).toHaveLength(1);
   });
 
   it('streams finalized ndjson blocks', async () => {
@@ -107,7 +107,7 @@ describe('PortalClient', () => {
     const fetchImpl = async (input: unknown) => {
       const url = typeof input === 'string' ? input : String(input);
       if (url.endsWith('/finalized-stream')) {
-        const ndjson = '{"header":{"number":3}}\n';
+        const ndjson = '{"header":{"number":1}}\n';
         return streamResponse(ndjson, 200);
       }
       return new Response(JSON.stringify({ number: 1, hash: '0xabc' }), { status: 200 });
@@ -133,7 +133,7 @@ describe('PortalClient', () => {
         return new Response('missing', { status: 404 });
       }
       if (url.endsWith('/stream')) {
-        const ndjson = '{"header":{"number":4}}\n';
+        const ndjson = '{"header":{"number":1}}\n';
         return streamResponse(ndjson, 200);
       }
       return new Response(JSON.stringify({ number: 1, hash: '0xabc' }), { status: 200 });

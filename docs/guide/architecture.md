@@ -43,6 +43,7 @@ The SQD Portal RPC Wrapper translates standard Ethereum JSON-RPC calls into opti
 - Metadata caching with TTL
 - Circuit breaker for fault tolerance
 - Automatic finalized fallback
+- Stream retry on truncation (narrow range until last block matches)
 
 ### Upstream RPC Client
 - Optional fallback for hash-based methods
