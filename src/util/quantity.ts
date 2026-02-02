@@ -15,6 +15,9 @@ export function parseQuantity(input: unknown): bigint | null {
     }
     return BigInt(trimmed);
   }
+  if (typeof input === 'bigint') {
+    return input;
+  }
   if (typeof input === 'number') {
     if (!Number.isFinite(input) || !Number.isInteger(input)) {
       throw new Error(`invalid quantity: ${input}`);

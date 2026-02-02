@@ -1,6 +1,21 @@
 import { PortalRequest } from './types';
 
-const NEGOTIABLE_FIELDS = new Set(['authorizationList']);
+const NEGOTIABLE_FIELDS = new Set([
+  // block fields (EIP-4895, EIP-4844)
+  'withdrawalsRoot',
+  'blobGasUsed',
+  'excessBlobGas',
+  'parentBeaconBlockRoot',
+  // transaction fields
+  'accessList',
+  'authorizationList',
+  'maxFeePerBlobGas',
+  'blobVersionedHashes',
+  // trace fields
+  'action',
+  'result',
+  'revertReason',
+]);
 
 export function extractUnknownField(text: string): string | undefined {
   const match = /unknown field `([^`]+)`/i.exec(text);

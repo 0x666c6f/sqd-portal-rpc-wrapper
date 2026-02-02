@@ -101,7 +101,7 @@ export function convertTxToRpc(tx: PortalTransaction, header: PortalBlockHeader)
   if (yParity !== undefined) {
     result.yParity = yParity;
   }
-  if (tx.v !== undefined) result.v = tx.v;
+  if (tx.v !== undefined) result.v = quantityHex(tx.v);
   if (tx.r !== undefined) result.r = tx.r;
   if (tx.s !== undefined) result.s = tx.s;
   if (tx.accessList !== undefined) result.accessList = tx.accessList;

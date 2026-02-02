@@ -144,6 +144,29 @@ PORTAL_CIRCUIT_BREAKER_RESET_MS=30000  # Reset after 30s
 
 When open, requests fail fast with 503 instead of waiting for Portal timeouts.
 
+## Field Negotiation
+
+Different SQD Portal datasets support different block/transaction/trace fields. For example, post-merge Ethereum fields like `withdrawalsRoot` and `parentBeaconBlockRoot` (EIP-4895, EIP-4844) exist on Ethereum mainnet but may not be available on other chains.
+
+The wrapper handles this automatically through field negotiation:
+
+1. The wrapper requests **all known fields** for a given RPC method.
+2. If the Portal responds with `unknown field 'X'` (HTTP 400), the wrapper checks whether the field is **negotiable** (i.e. optional for a correct RPC response).
+3. If negotiable, the field is dropped and the request is retried without it. The dropped field is cached per dataset URL so subsequent requests skip it automatically.
+4. If the field is **not** negotiable (i.e. required for a valid response), the wrapper returns a 502 error.
+
+### Negotiable Fields
+
+The following fields are negotiable and will be silently dropped if unsupported by a dataset:
+
+| Category | Fields |
+|----------|--------|
+| Block | `withdrawalsRoot`, `blobGasUsed`, `excessBlobGas`, `parentBeaconBlockRoot` |
+| Transaction | `accessList`, `authorizationList`, `maxFeePerBlobGas`, `blobVersionedHashes` |
+| Trace | `action`, `result`, `revertReason` |
+
+Dropped fields are tracked by the `portal_unsupported_fields_total{field}` Prometheus metric.
+
 ## Observability
 
 ### Metrics (Prometheus)
