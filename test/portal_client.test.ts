@@ -379,7 +379,39 @@ describe('PortalClient', () => {
     let call = 0;
     const fetchImpl = async (_input: unknown, _init?: RequestInit) => {
       call += 1;
-      return new Response('Bad request: unknown field `withdrawalsRoot`', { status: 400 });
+      return new Response('Bad request: unknown field `number`', { status: 400 });
+    };
+    const client = new PortalClient(cfg, { fetchImpl });
+    const baseUrl = 'https://portal.sqd.dev/datasets/ethereum-mainnet';
+    const request = {
+      type: 'evm' as const,
+      fromBlock: 1,
+      toBlock: 1,
+      fields: { block: { number: true } }
+    };
+    await expect(client.streamBlocks(baseUrl, false, request)).rejects.toThrow(
+      'portal does not support required field number'
+    );
+    expect(call).toBe(1);
+  });
+
+  it('retries when portal rejects negotiable block fields', async () => {
+    const cfg = loadConfig({
+      SERVICE_MODE: 'single',
+      PORTAL_DATASET: 'ethereum-mainnet',
+      PORTAL_CHAIN_ID: '1'
+    });
+    const bodies: Array<Record<string, unknown>> = [];
+    let call = 0;
+    const fetchImpl = async (_input: unknown, init?: RequestInit) => {
+      if (init?.body) {
+        bodies.push(JSON.parse(init.body as string) as Record<string, unknown>);
+      }
+      call += 1;
+      if (call === 1) {
+        return new Response('Bad request: unknown field `withdrawalsRoot`', { status: 400 });
+      }
+      return streamResponse(blockLine(1), 200);
     };
     const client = new PortalClient(cfg, { fetchImpl });
     const baseUrl = 'https://portal.sqd.dev/datasets/ethereum-mainnet';
@@ -389,10 +421,13 @@ describe('PortalClient', () => {
       toBlock: 1,
       fields: { block: { number: true, withdrawalsRoot: true } }
     };
-    await expect(client.streamBlocks(baseUrl, false, request)).rejects.toThrow(
-      'portal does not support required field withdrawalsRoot'
-    );
-    expect(call).toBe(1);
+    const blocks = await client.streamBlocks(baseUrl, false, request);
+    expect(blocks).toHaveLength(1);
+
+    const first = bodies[0] as { fields?: { block?: Record<string, unknown> } };
+    const second = bodies[1] as { fields?: { block?: Record<string, unknown> } };
+    expect(first.fields?.block?.withdrawalsRoot).toBe(true);
+    expect(second.fields?.block?.withdrawalsRoot).toBeUndefined();
   });
 
   it('retries portal stream when negotiable fields are rejected', async () => {

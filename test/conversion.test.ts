@@ -174,6 +174,57 @@ describe('conversion', () => {
     expect(result.s).toBe('0x0');
   });
 
+  it('converts bigint v to hex', () => {
+    const bigintV: PortalTransaction = { ...tx, v: 1n as unknown as string };
+    const result = convertTxToRpc(bigintV, header);
+    expect(result.v).toBe('0x1');
+  });
+
+  it('converts bigint block header fields to hex', () => {
+    const block: PortalBlockResponse = {
+      header: {
+        ...header,
+        gasUsed: 5000n as unknown as string,
+        gasLimit: 30000000n as unknown as string,
+        difficulty: 0n as unknown as string,
+        size: 100000,
+        baseFeePerGas: 1000000000n as unknown as string,
+        totalDifficulty: 58750003716598352816469n as unknown as string,
+        blobGasUsed: 131072n as unknown as string,
+        excessBlobGas: 0n as unknown as string,
+      },
+      transactions: []
+    };
+    const result = convertBlockToRpc(block, false);
+    expect(result.gasUsed).toBe('0x1388');
+    expect(result.gasLimit).toBe('0x1c9c380');
+    expect(result.difficulty).toBe('0x0');
+    expect(result.baseFeePerGas).toBe('0x3b9aca00');
+    expect(result.totalDifficulty).toBe('0xc70d815d562d3cfa955');
+    expect(result.blobGasUsed).toBe('0x20000');
+    expect(result.excessBlobGas).toBe('0x0');
+  });
+
+  it('converts bigint tx quantity fields to hex', () => {
+    const bigintTx: PortalTransaction = {
+      ...tx,
+      value: 1000000000000000000n as unknown as string,
+      gas: 21000n as unknown as string,
+      gasPrice: 7936957716n as unknown as string,
+      maxFeePerGas: 9278660528n as unknown as string,
+      maxPriorityFeePerGas: 3000000000n as unknown as string,
+      nonce: '0x5',
+      type: 2 as unknown as string,
+    };
+    const result = convertTxToRpc(bigintTx, header);
+    expect(result.value).toBe('0xde0b6b3a7640000');
+    expect(result.gas).toBe('0x5208');
+    expect(result.gasPrice).toBe('0x1d9145d14');
+    expect(result.maxFeePerGas).toBe('0x2290d1fb0');
+    expect(result.maxPriorityFeePerGas).toBe('0xb2d05e00');
+    expect(result.type).toBe('0x2');
+  });
+
   it('adds blob and access list fields when present', () => {
     const withBlob: PortalTransaction = {
       ...tx,

@@ -9,6 +9,12 @@ describe('quantity', () => {
     expect(parseQuantity(7)).toBe(7n);
   });
 
+  it('passes through bigint values', () => {
+    expect(parseQuantity(0n)).toBe(0n);
+    expect(parseQuantity(42n)).toBe(42n);
+    expect(parseQuantity(121663366310n)).toBe(121663366310n);
+  });
+
   it('returns null for empty input', () => {
     expect(parseQuantity(null)).toBeNull();
     expect(parseQuantity('')).toBeNull();
