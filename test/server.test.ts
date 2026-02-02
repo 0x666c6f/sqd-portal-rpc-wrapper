@@ -87,16 +87,14 @@ describe('server', () => {
     const fetchImpl = vi.fn().mockImplementation(async (input: unknown) => {
       const url = typeof input === 'string' ? input : String(input);
       if (url.endsWith('/metadata')) {
-        return new Response(JSON.stringify({ dataset: 'ethereum-mainnet', real_time: true }), { status: 200 });
+        return new Response(JSON.stringify({ dataset: 'ethereum-mainnet', real_time: true }), { status: 200, headers: { 'content-type': 'application/json' } });
       }
-      return new Response(JSON.stringify({ number: 1, hash: '0xabc' }), { status: 200 });
+      return new Response(JSON.stringify({ number: 1, hash: '0xabc' }), { status: 200, headers: { 'content-type': 'application/json' } });
     });
-    vi.stubGlobal('fetch', fetchImpl);
-    const server = await buildServer(config);
+    const server = await buildServer(config, { fetchImpl });
     const res = await server.inject({ method: 'GET', url: '/readyz' });
     expect(res.statusCode).toBe(200);
     await server.close();
-    vi.unstubAllGlobals();
   });
 
   it('passes request id header to readiness check', async () => {
@@ -108,16 +106,14 @@ describe('server', () => {
     const fetchImpl = vi.fn().mockImplementation(async (input: unknown) => {
       const url = typeof input === 'string' ? input : String(input);
       if (url.endsWith('/metadata')) {
-        return new Response(JSON.stringify({ dataset: 'ethereum-mainnet', real_time: true }), { status: 200 });
+        return new Response(JSON.stringify({ dataset: 'ethereum-mainnet', real_time: true }), { status: 200, headers: { 'content-type': 'application/json' } });
       }
-      return new Response(JSON.stringify({ number: 1, hash: '0xabc' }), { status: 200 });
+      return new Response(JSON.stringify({ number: 1, hash: '0xabc' }), { status: 200, headers: { 'content-type': 'application/json' } });
     });
-    vi.stubGlobal('fetch', fetchImpl);
-    const server = await buildServer(config);
+    const server = await buildServer(config, { fetchImpl });
     const res = await server.inject({ method: 'GET', url: '/readyz', headers: { 'x-request-id': 'req-test' } });
     expect(res.statusCode).toBe(200);
     await server.close();
-    vi.unstubAllGlobals();
   });
 
   it('returns 503 when readyz portal check fails', async () => {
@@ -127,12 +123,10 @@ describe('server', () => {
       PORTAL_CHAIN_ID: '1'
     });
     const fetchImpl = vi.fn().mockResolvedValue(new Response('unavailable', { status: 503 }));
-    vi.stubGlobal('fetch', fetchImpl);
-    const server = await buildServer(config);
+    const server = await buildServer(config, { fetchImpl });
     const res = await server.inject({ method: 'GET', url: '/readyz' });
     expect(res.statusCode).toBe(503);
     await server.close();
-    vi.unstubAllGlobals();
   });
 
   it('returns 503 when no datasets configured', async () => {
@@ -539,7 +533,7 @@ describe('server', () => {
     const fetchImpl = vi.fn().mockImplementation(async (input: unknown, _init?: RequestInit) => {
       const url = typeof input === 'string' ? input : String(input);
       if (url.endsWith('/metadata')) {
-        return new Response(JSON.stringify({ dataset: 'ethereum-mainnet', real_time: true, start_block: 0 }), { status: 200 });
+        return new Response(JSON.stringify({ dataset: 'ethereum-mainnet', real_time: true, start_block: 0 }), { status: 200, headers: { 'content-type': 'application/json' } });
       }
       if (url.endsWith('/stream') || url.endsWith('/finalized-stream')) {
         const ndjson = JSON.stringify({
@@ -549,11 +543,11 @@ describe('server', () => {
             parentHash: '0x' + '22'.repeat(32),
             timestamp: 1000,
             miner: '0x' + '33'.repeat(20),
-            gasUsed: 21000,
-            gasLimit: 30000000,
-            nonce: 1,
-            difficulty: 1,
-            totalDifficulty: 1,
+            gasUsed: '0x5208',
+            gasLimit: '0x1c9c380',
+            nonce: '0x0000000000000001',
+            difficulty: '0x1',
+            totalDifficulty: '0x1',
             size: 500,
             stateRoot: '0x' + '44'.repeat(32),
             transactionsRoot: '0x' + '55'.repeat(32),
@@ -563,12 +557,12 @@ describe('server', () => {
             mixHash: '0x' + '77'.repeat(32),
             sha3Uncles: '0x' + '88'.repeat(32)
           },
-          transactions: [{ hash: '0xtx', transactionIndex: 0 }],
+          transactions: [{ hash: '0x' + 'aa'.repeat(32), transactionIndex: 0 }],
           logs: [
             {
               logIndex: 0,
               transactionIndex: 0,
-              transactionHash: '0xtx',
+              transactionHash: '0x' + 'aa'.repeat(32),
               address: '0x' + '99'.repeat(20),
               data: '0x',
               topics: ['0x' + 'aa'.repeat(32)]
@@ -578,12 +572,11 @@ describe('server', () => {
         return new Response(`${ndjson}\n`, { status: 200, headers: { 'content-type': 'application/x-ndjson' } });
       }
       if (url.endsWith('/head') || url.endsWith('/finalized-head')) {
-        return new Response(JSON.stringify({ number: 5, hash: blockHash }), { status: 200 });
+        return new Response(JSON.stringify({ number: 5, hash: blockHash }), { status: 200, headers: { 'content-type': 'application/json' } });
       }
       return new Response('not found', { status: 404 });
     });
-    vi.stubGlobal('fetch', fetchImpl);
-    const server = await buildServer(config);
+    const server = await buildServer(config, { fetchImpl });
     const res = await server.inject({
       method: 'POST',
       url: '/',
@@ -602,7 +595,6 @@ describe('server', () => {
     expect(Array.isArray(logs)).toBe(true);
     expect(logs[0]?.blockNumber).toBe('0x5');
     await server.close();
-    vi.unstubAllGlobals();
   });
 
   it('coalesces eth_getBlockByNumber batch into one portal stream', async () => {
@@ -619,11 +611,11 @@ describe('server', () => {
         parentHash: '0x' + '22'.repeat(32),
         timestamp: 1000,
         miner: '0x' + '33'.repeat(20),
-        gasUsed: 21000,
-        gasLimit: 30000000,
-        nonce: 1,
-        difficulty: 1,
-        totalDifficulty: 1,
+        gasUsed: '0x5208',
+        gasLimit: '0x1c9c380',
+        nonce: '0x0000000000000001',
+        difficulty: '0x1',
+        totalDifficulty: '0x1',
         size: 500,
         stateRoot: '0x' + '44'.repeat(32),
         transactionsRoot: '0x' + '55'.repeat(32),
@@ -633,12 +625,12 @@ describe('server', () => {
         mixHash: '0x' + '77'.repeat(32),
         sha3Uncles: '0x' + '88'.repeat(32)
       },
-      transactions: [{ hash: '0xtx', transactionIndex: 0 }]
+      transactions: [{ hash: '0x' + 'aa'.repeat(32), transactionIndex: 0 }]
     });
     const fetchImpl = vi.fn().mockImplementation(async (input: unknown, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : String(input);
       if (url.endsWith('/metadata')) {
-        return new Response(JSON.stringify({ dataset: 'ethereum-mainnet', real_time: true, start_block: 0 }), { status: 200 });
+        return new Response(JSON.stringify({ dataset: 'ethereum-mainnet', real_time: true, start_block: 0 }), { status: 200, headers: { 'content-type': 'application/json' } });
       }
       if (url.endsWith('/stream') || url.endsWith('/finalized-stream')) {
         const body = JSON.parse(String(init?.body));
@@ -647,12 +639,11 @@ describe('server', () => {
         return new Response(`${ndjson}\n`, { status: 200, headers: { 'content-type': 'application/x-ndjson' } });
       }
       if (url.endsWith('/head') || url.endsWith('/finalized-head')) {
-        return new Response(JSON.stringify({ number: 7, hash: '0x' + '11'.repeat(32) }), { status: 200 });
+        return new Response(JSON.stringify({ number: 7, hash: '0x' + '11'.repeat(32) }), { status: 200, headers: { 'content-type': 'application/json' } });
       }
       return new Response('not found', { status: 404 });
     });
-    vi.stubGlobal('fetch', fetchImpl);
-    const server = await buildServer(config);
+    const server = await buildServer(config, { fetchImpl });
     const res = await server.inject({
       method: 'POST',
       url: '/',
@@ -672,7 +663,6 @@ describe('server', () => {
     expect(byId.get(2)?.result?.number).toBe('0x6');
     expect(byId.get(3)?.result?.number).toBe('0x7');
     await server.close();
-    vi.unstubAllGlobals();
   });
 
   it('skips coalescing when block range has gaps', async () => {
@@ -689,11 +679,11 @@ describe('server', () => {
         parentHash: '0x' + '22'.repeat(32),
         timestamp: 1000,
         miner: '0x' + '33'.repeat(20),
-        gasUsed: 21000,
-        gasLimit: 30000000,
-        nonce: 1,
-        difficulty: 1,
-        totalDifficulty: 1,
+        gasUsed: '0x5208',
+        gasLimit: '0x1c9c380',
+        nonce: '0x0000000000000001',
+        difficulty: '0x1',
+        totalDifficulty: '0x1',
         size: 500,
         stateRoot: '0x' + '44'.repeat(32),
         transactionsRoot: '0x' + '55'.repeat(32),
@@ -703,12 +693,12 @@ describe('server', () => {
         mixHash: '0x' + '77'.repeat(32),
         sha3Uncles: '0x' + '88'.repeat(32)
       },
-      transactions: [{ hash: '0xtx', transactionIndex: 0 }]
+      transactions: [{ hash: '0x' + 'aa'.repeat(32), transactionIndex: 0 }]
     });
     const fetchImpl = vi.fn().mockImplementation(async (input: unknown, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : String(input);
       if (url.endsWith('/metadata')) {
-        return new Response(JSON.stringify({ dataset: 'ethereum-mainnet', real_time: true, start_block: 0 }), { status: 200 });
+        return new Response(JSON.stringify({ dataset: 'ethereum-mainnet', real_time: true, start_block: 0 }), { status: 200, headers: { 'content-type': 'application/json' } });
       }
       if (url.endsWith('/stream') || url.endsWith('/finalized-stream')) {
         streamCalls += 1;
@@ -717,12 +707,11 @@ describe('server', () => {
         return new Response(`${JSON.stringify(block)}\n`, { status: 200, headers: { 'content-type': 'application/x-ndjson' } });
       }
       if (url.endsWith('/head') || url.endsWith('/finalized-head')) {
-        return new Response(JSON.stringify({ number: 7, hash: '0x' + '11'.repeat(32) }), { status: 200 });
+        return new Response(JSON.stringify({ number: 7, hash: '0x' + '11'.repeat(32) }), { status: 200, headers: { 'content-type': 'application/json' } });
       }
       return new Response('not found', { status: 404 });
     });
-    vi.stubGlobal('fetch', fetchImpl);
-    const server = await buildServer(config);
+    const server = await buildServer(config, { fetchImpl });
     const res = await server.inject({
       method: 'POST',
       url: '/',
@@ -735,7 +724,6 @@ describe('server', () => {
     expect(res.statusCode).toBe(200);
     expect(streamCalls).toBe(2);
     await server.close();
-    vi.unstubAllGlobals();
   });
 
   it('skips notifications in batch', async () => {

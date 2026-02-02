@@ -17,7 +17,11 @@ import { defaultDatasetMap } from './portal/mapping';
 
 const gunzipAsync = promisify(gunzip);
 
-export async function buildServer(config: Config): Promise<FastifyInstance> {
+export interface BuildServerOptions {
+  fetchImpl?: typeof fetch;
+}
+
+export async function buildServer(config: Config, options?: BuildServerOptions): Promise<FastifyInstance> {
   const server = fastify({
     logger: {
       level: process.env.LOG_LEVEL || 'info',
@@ -102,7 +106,7 @@ export async function buildServer(config: Config): Promise<FastifyInstance> {
     });
   });
 
-  const portal = new PortalClient(config, { logger: server.log });
+  const portal = new PortalClient(config, { logger: server.log, fetchImpl: options?.fetchImpl });
   const upstream = new UpstreamRpcClient(config, { logger: server.log });
   const limiter = new ConcurrencyLimiter(config.maxConcurrentRequests);
 
